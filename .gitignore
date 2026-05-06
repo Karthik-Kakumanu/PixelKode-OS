@@ -1,0 +1,12 @@
+# dependencies and build output
+/node_modules/
+/.next/
+*.tsbuildinfo
+
+# local environment and logs
+.env.local
+dev-server.log
+npm-debug.log*
+
+# clerk configuration (can include secrets)
+/.clerk/

@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(247, 207, 227, 0.82), transparent 28%),
+    radial-gradient(circle at top right, rgba(191, 233, 225, 0.78), transparent 25%),
+    radial-gradient(circle at bottom left, rgba(216, 214, 255, 0.76), transparent 24%),
+    linear-gradient(180deg, #fffaf8 0%, #f7f6ff 48%, #f5fbfa 100%);
+  color: #2d2540;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(rgba(97, 81, 127, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(97, 81, 127, 0.05) 1px, transparent 1px);
+  background-size: 96px 96px;
+  mask-image: radial-gradient(circle at center, black, transparent 80%);
+}
+
+* {
+  border-color: rgba(109, 94, 142, 0.12);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+}
+
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply tracking-tight text-slate-900;
+  }
+
+  p {
+    @apply text-slate-600;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.58));
+    @apply border backdrop-blur-xl shadow-xl shadow-rose-100/40;
+  }
+
+  .section-shell {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.62));
+    @apply rounded-[28px] border p-5 shadow-xl shadow-violet-100/40;
+  }
+}
