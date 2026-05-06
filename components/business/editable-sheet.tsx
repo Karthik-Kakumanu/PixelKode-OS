@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 
 import { PageHeader } from "@/components/app/page-header";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,9 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
   const { title, description } = sheetTitles[sheetKey];
   const sheet = useBusinessStore((state) => state.sheets[sheetKey]);
   const addRow = useBusinessStore((state) => state.addRow);
+  const deleteRow = useBusinessStore((state) => state.deleteRow);
   const addColumn = useBusinessStore((state) => state.addColumn);
+  const deleteColumn = useBusinessStore((state) => state.deleteColumn);
   const updateCell = useBusinessStore((state) => state.updateCell);
   const isLoaded = useBusinessStore((state) => state.isLoaded);
   const isSaving = useBusinessStore((state) => state.isSaving);
@@ -107,9 +109,24 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
                     className="sticky top-0 border-b border-violet-100 bg-white/90 px-2 py-2.5 font-medium text-slate-700"
                     style={{ width: column.width ?? "140px", minWidth: column.width ?? "140px" }}
                   >
-                    {column.label}
+                    <div className="flex items-center justify-between gap-2">
+                      <span>{column.label}</span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        type="button"
+                        className="h-7 w-7 rounded-lg"
+                        onClick={() => deleteColumn(sheetKey, column.id)}
+                        aria-label={`Delete ${column.label} column`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </th>
                 ))}
+                <th className="sticky right-0 top-0 w-[64px] min-w-[64px] border-b border-violet-100 bg-white/90 px-2 py-2.5 text-center font-medium text-slate-700">
+                  Row
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -172,6 +189,18 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
                       </td>
                     );
                   })}
+                  <td className="sticky right-0 border-b border-violet-100 bg-white/90 px-2 py-1 text-center align-top">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      type="button"
+                      className="h-8 w-8 rounded-lg"
+                      onClick={() => deleteRow(sheetKey, rowIndex)}
+                      aria-label={`Delete row ${rowIndex + 1}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </td>
                 </tr>
               ))}
             </tbody>

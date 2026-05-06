@@ -6,6 +6,7 @@ const DEFAULT_STATE_ID = "pixelkode-main";
 
 type BusinessSheets = ReturnType<typeof createDefaultSheets>;
 const validColumnTypes = new Set<ColumnType>(["text", "number", "date", "select", "textarea"]);
+const legacyTeamColumnIds = new Set(["activeProjects", "monthlyPayout", "hoursPerWeek"]);
 
 declare global {
   // eslint-disable-next-line no-var
@@ -90,6 +91,24 @@ function normalizeSheet(sheet: unknown, fallback: SheetData): SheetData {
   };
 }
 
+function stripLegacyTeamFields(sheet: SheetData): SheetData {
+  const columns = sheet.columns.filter((column) => !legacyTeamColumnIds.has(column.id));
+  const rows = sheet.rows.map((row) => {
+    const nextRow = { ...row };
+
+    legacyTeamColumnIds.forEach((columnId) => {
+      delete nextRow[columnId];
+    });
+
+    return nextRow;
+  });
+
+  return {
+    columns,
+    rows
+  };
+}
+
 function normalizeSheets(input: unknown): BusinessSheets {
   const fallback = createDefaultSheets();
 
@@ -98,12 +117,13 @@ function normalizeSheets(input: unknown): BusinessSheets {
   }
 
   const candidate = input as Record<string, unknown>;
+  const team = stripLegacyTeamFields(normalizeSheet(candidate.team, fallback.team));
 
   return {
     projects: normalizeSheet(candidate.projects, fallback.projects),
     leads: normalizeSheet(candidate.leads, fallback.leads),
     revenue: normalizeSheet(candidate.revenue, fallback.revenue),
-    team: normalizeSheet(candidate.team, fallback.team),
+    team,
     content: normalizeSheet(candidate.content, fallback.content),
     services: normalizeSheet(candidate.services, fallback.services)
   };

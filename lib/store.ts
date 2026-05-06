@@ -12,8 +12,10 @@ interface BusinessStore {
   error: string;
   loadSheets: () => Promise<void>;
   addRow: (sheet: SheetKey) => void;
+  deleteRow: (sheet: SheetKey, rowIndex: number) => void;
   updateCell: (sheet: SheetKey, rowIndex: number, columnId: string, value: CellValue) => void;
   addColumn: (sheet: SheetKey, column: SheetColumn) => void;
+  deleteColumn: (sheet: SheetKey, columnId: string) => void;
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -125,6 +127,20 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     set({ sheets });
     queuePersist(sheets, set);
   },
+  deleteRow: (sheet, rowIndex) => {
+    const current = get().sheets[sheet];
+    const rows = current.rows.filter((_, index) => index !== rowIndex);
+    const sheets = {
+      ...get().sheets,
+      [sheet]: {
+        ...current,
+        rows
+      }
+    };
+
+    set({ sheets });
+    queuePersist(sheets, set);
+  },
   updateCell: (sheet, rowIndex, columnId, value) => {
     const current = get().sheets[sheet];
     const rows = current.rows.map((row, index) => (index === rowIndex ? { ...row, [columnId]: value } : row));
@@ -149,6 +165,31 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       ...get().sheets,
       [sheet]: {
         columns: [...current.columns, column],
+        rows
+      }
+    };
+
+    set({ sheets });
+    queuePersist(sheets, set);
+  },
+  deleteColumn: (sheet, columnId) => {
+    const current = get().sheets[sheet];
+
+    if (current.columns.length <= 1) {
+      set({ error: "At least one column must remain in each sheet." });
+      return;
+    }
+
+    const columns = current.columns.filter((column) => column.id !== columnId);
+    const rows = current.rows.map((row) => {
+      const nextRow = { ...row };
+      delete nextRow[columnId];
+      return nextRow;
+    });
+    const sheets = {
+      ...get().sheets,
+      [sheet]: {
+        columns,
         rows
       }
     };

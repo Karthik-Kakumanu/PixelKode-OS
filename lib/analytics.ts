@@ -11,6 +11,23 @@ function toText(value: unknown) {
   return typeof value === "string" ? value : "";
 }
 
+function parseDate(value: unknown) {
+  const text = toText(value);
+  if (!text) return null;
+
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getMonthKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function formatMonthLabel(monthKey: string) {
+  const [year, month] = monthKey.split("-").map(Number);
+  return new Date(year, (month || 1) - 1, 1).toLocaleString("en-US", { month: "short", year: "numeric" });
+}
+
 export function buildDashboardMetrics(sheets: Record<string, SheetData>): DashboardMetric[] {
   const projects = sheets.projects?.rows ?? [];
   const leads = sheets.leads?.rows ?? [];
@@ -106,17 +123,18 @@ export function buildBusinessSummary(sheets: Record<string, SheetData>) {
 }
 
 export function buildRevenueByCategory(sheets: Record<string, SheetData>) {
-  const rows = sheets.revenue?.rows ?? [];
+  const rows = sheets.projects?.rows ?? [];
   const totals = new Map<string, number>();
 
   rows
-    .filter((row) => toText(row.entryType) === "Income")
     .forEach((row) => {
       const key = toText(row.category) || "Uncategorized";
-      totals.set(key, (totals.get(key) ?? 0) + toNumber(row.amount));
+      totals.set(key, (totals.get(key) ?? 0) + toNumber(row.projectValue || row.amountReceived));
     });
 
-  return Array.from(totals.entries()).map(([name, value]) => ({ name, value }));
+  return Array.from(totals.entries())
+    .map(([name, value]) => ({ name, value }))
+    .sort((left, right) => right.value - left.value);
 }
 
 export function buildRevenueBySector(sheets: Record<string, SheetData>) {
@@ -156,19 +174,54 @@ export function buildLeadStatusData(sheets: Record<string, SheetData>) {
 }
 
 export function buildMonthlyRevenue(sheets: Record<string, SheetData>) {
-  const rows = sheets.revenue?.rows ?? [];
-  const totals = new Map<string, number>();
+  const rows = sheets.projects?.rows ?? [];
+  const totals = new Map<string, { revenue: number; target: number }>();
+  const datedProjects = rows
+    .map((row) => ({
+      startDate: parseDate(row.startDate) ?? parseDate(row.deliveryDate),
+      amountReceived: toNumber(row.amountReceived),
+      projectValue: toNumber(row.projectValue)
+    }))
+    .filter((row) => row.startDate);
 
-  rows.forEach((row) => {
-    const date = toText(row.entryDate);
-    const month = date ? new Date(date).toLocaleString("en-US", { month: "short" }) : "Unknown";
-    const signed = ["Expense", "Payroll", "Personal Use"].includes(toText(row.entryType))
-      ? -toNumber(row.amount)
-      : toNumber(row.amount);
-    totals.set(month, (totals.get(month) ?? 0) + signed);
+  if (datedProjects.length === 0) {
+    return [];
+  }
+
+  datedProjects.forEach((row) => {
+    const monthKey = getMonthKey(row.startDate as Date);
+    const current = totals.get(monthKey) ?? { revenue: 0, target: 0 };
+
+    totals.set(monthKey, {
+      revenue: current.revenue + row.amountReceived,
+      target: current.target + row.projectValue
+    });
   });
 
-  return Array.from(totals.entries()).map(([month, revenue]) => ({ month, revenue, target: revenue * 0.85 }));
+  const sortedKeys = Array.from(totals.keys()).sort();
+  const firstMonth = sortedKeys[0];
+  const lastProjectMonth = sortedKeys[sortedKeys.length - 1];
+  const now = new Date();
+  const lastMonth = getMonthKey(new Date(Math.max(new Date(`${lastProjectMonth}-01`).getTime(), new Date(now.getFullYear(), now.getMonth(), 1).getTime())));
+  const filled: { month: string; revenue: number; target: number }[] = [];
+
+  let cursor = new Date(`${firstMonth}-01`);
+  const end = new Date(`${lastMonth}-01`);
+
+  while (cursor <= end) {
+    const monthKey = getMonthKey(cursor);
+    const current = totals.get(monthKey) ?? { revenue: 0, target: 0 };
+
+    filled.push({
+      month: formatMonthLabel(monthKey),
+      revenue: current.revenue,
+      target: current.target
+    });
+
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+  }
+
+  return filled;
 }
 
 export function buildRevenueTypeData(sheets: Record<string, SheetData>) {
@@ -208,8 +261,8 @@ export function buildTeamCapacityData(sheets: Record<string, SheetData>) {
 
   return rows.map((row) => ({
     name: toText(row.memberName) || "Team",
-    hours: toNumber(row.hoursPerWeek),
-    projects: toNumber(row.activeProjects)
+    capacity: toText(row.availability) === "Available" ? 100 : toText(row.availability) === "Busy" ? 60 : 20,
+    active: toText(row.availability) === "On Hold" ? 0 : 1
   }));
 }
 

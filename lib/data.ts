@@ -215,9 +215,6 @@ export const defaultSheets: Record<SheetKey, SheetData> = {
         options: ["Available", "Busy", "On Hold"],
         width: "120px"
       },
-      { id: "activeProjects", label: "Active Projects", type: "number", width: "120px" },
-      { id: "monthlyPayout", label: "Monthly Payout", type: "number", width: "130px" },
-      { id: "hoursPerWeek", label: "Hours / Week", type: "number", width: "120px" },
       { id: "notes", label: "Notes", type: "textarea", width: "140px" }
     ],
     rows: [
@@ -226,9 +223,6 @@ export const defaultSheets: Record<SheetKey, SheetData> = {
         memberName: "Karthik",
         role: "Founder",
         availability: "Busy",
-        activeProjects: 4,
-        monthlyPayout: 0,
-        hoursPerWeek: 60,
         notes: "Handles strategy, sales, and delivery"
       },
       {
@@ -236,9 +230,6 @@ export const defaultSheets: Record<SheetKey, SheetData> = {
         memberName: "Partner",
         role: "Operations",
         availability: "Available",
-        activeProjects: 3,
-        monthlyPayout: 0,
-        hoursPerWeek: 48,
         notes: "Handles coordination and finance tracking"
       }
     ]
