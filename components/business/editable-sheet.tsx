@@ -10,6 +10,21 @@ import { getColumnIcon, getColumnOptions, getOptionClasses, getRequiredColumns }
 import { useBusinessStore } from "@/lib/store";
 import type { CellValue, ColumnType, SheetColumn, SheetKey } from "@/lib/types";
 
+type QuickView = {
+  id: string;
+  label: string;
+  matches: (row: Record<string, CellValue>) => boolean;
+};
+
+function shouldRenderAsSelect(sheetKey: SheetKey, column: SheetColumn) {
+  if (column.type === "select") return true;
+
+  return (
+    sheetKey === "projects" &&
+    ["sector", "category", "domain", "completionPercent"].includes(column.id)
+  );
+}
+
 function castValue(type: ColumnType, value: string) {
   if (type === "number") return value === "" ? 0 : Number(value);
   return value;
@@ -45,8 +60,119 @@ function getCellClasses(column: SheetColumn, value: CellValue | undefined) {
   return `${base} border-white/70 bg-white/90 shadow-[0_12px_30px_rgba(31,41,55,0.06)]`;
 }
 
+function toDayString(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
+
+function buildQuickViews(sheetKey: SheetKey): QuickView[] {
+  const today = new Date().toISOString().slice(0, 10);
+
+  switch (sheetKey) {
+    case "projects":
+      return [
+        { id: "all", label: "All", matches: () => true },
+        {
+          id: "overdue",
+          label: "Overdue",
+          matches: (row) =>
+            toDayString(row.deliveryDate) !== "" &&
+            toDayString(row.deliveryDate) < today &&
+            String(row.projectStatus ?? "") !== "Completed"
+        },
+        {
+          id: "pending-payment",
+          label: "Pending Payment",
+          matches: (row) => Number(row.pendingAmount ?? 0) > 0
+        },
+        {
+          id: "active",
+          label: "Active",
+          matches: (row) => String(row.projectStatus ?? "") === "In Progress"
+        }
+      ];
+    case "leads":
+      return [
+        { id: "all", label: "All", matches: () => true },
+        {
+          id: "due-today",
+          label: "Due Today",
+          matches: (row) => toDayString(row.followUpDate) === today
+        },
+        {
+          id: "overdue",
+          label: "Overdue",
+          matches: (row) => toDayString(row.followUpDate) !== "" && toDayString(row.followUpDate) < today
+        },
+        {
+          id: "proposal",
+          label: "Proposal Sent",
+          matches: (row) => String(row.leadStatus ?? "") === "Proposal Sent"
+        }
+      ];
+    case "content":
+      return [
+        { id: "all", label: "All", matches: () => true },
+        {
+          id: "scheduled",
+          label: "Scheduled",
+          matches: (row) => String(row.stage ?? "") === "Scheduled"
+        },
+        {
+          id: "publishing-today",
+          label: "Publishing Today",
+          matches: (row) => toDayString(row.publishDate) === today
+        }
+      ];
+    case "team":
+      return [
+        { id: "all", label: "All", matches: () => true },
+        {
+          id: "busy",
+          label: "Busy",
+          matches: (row) => String(row.availability ?? "") === "Busy"
+        },
+        {
+          id: "available",
+          label: "Available",
+          matches: (row) => String(row.availability ?? "") === "Available"
+        }
+      ];
+    case "revenue":
+      return [
+        { id: "all", label: "All", matches: () => true },
+        {
+          id: "income",
+          label: "Income",
+          matches: (row) => String(row.entryType ?? "") === "Income"
+        },
+        {
+          id: "expense",
+          label: "Expense",
+          matches: (row) => ["Expense", "Payroll", "Personal Use"].includes(String(row.entryType ?? ""))
+        }
+      ];
+    case "services":
+      return [
+        { id: "all", label: "All", matches: () => true },
+        {
+          id: "core",
+          label: "Core Offer",
+          matches: (row) => String(row.status ?? "") === "Core Offer"
+        },
+        {
+          id: "high-demand",
+          label: "High Demand",
+          matches: (row) => String(row.status ?? "") === "High Demand"
+        }
+      ];
+    default:
+      return [{ id: "all", label: "All", matches: () => true }];
+  }
+}
+
 export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
   const sheet = useBusinessStore((state) => state.sheets[sheetKey]);
+  const servicesSheet = useBusinessStore((state) => state.sheets.services);
   const addRow = useBusinessStore((state) => state.addRow);
   const deleteRow = useBusinessStore((state) => state.deleteRow);
   const addColumn = useBusinessStore((state) => state.addColumn);
@@ -62,6 +188,7 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
   const [search, setSearch] = useState("");
   const [filterColumnId, setFilterColumnId] = useState("all");
   const [filterValue, setFilterValue] = useState("all");
+  const [quickViewId, setQuickViewId] = useState("all");
   const [customOptionDrafts, setCustomOptionDrafts] = useState<Record<string, string>>({});
   const [isMounted, setIsMounted] = useState(false);
 
@@ -70,8 +197,9 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
   }, []);
 
   const requiredColumns = useMemo(() => new Set(getRequiredColumns(sheetKey)), [sheetKey]);
+  const quickViews = useMemo(() => buildQuickViews(sheetKey), [sheetKey]);
   const selectableColumns = useMemo(
-    () => sheet.columns.filter((column) => getColumnOptions(sheetKey, column).length > 0),
+    () => sheet.columns.filter((column) => shouldRenderAsSelect(sheetKey, column)),
     [sheet.columns, sheetKey]
   );
 
@@ -79,21 +207,30 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
     const query = search.trim().toLowerCase();
 
     return sheet.rows.filter((row) => {
+      const quickView = quickViews.find((item) => item.id === quickViewId);
       const matchesQuery =
         query.length === 0 ||
         sheet.columns.some((column) => String(row[column.id] ?? "").toLowerCase().includes(query));
 
       if (!matchesQuery) return false;
+      if (quickView && !quickView.matches(row)) return false;
       if (filterColumnId === "all" || filterValue === "all") return true;
       return String(row[filterColumnId] ?? "") === filterValue;
     });
-  }, [filterColumnId, filterValue, search, sheet.columns, sheet.rows]);
+  }, [filterColumnId, filterValue, quickViewId, quickViews, search, sheet.columns, sheet.rows]);
 
   const activeFilterOptions = useMemo(() => {
     if (filterColumnId === "all") return [];
     const column = sheet.columns.find((item) => item.id === filterColumnId);
-    return column ? getColumnOptions(sheetKey, column) : [];
-  }, [filterColumnId, sheet.columns, sheetKey]);
+    if (!column) return [];
+
+    const dynamicOptions =
+      sheetKey === "leads" && column.id === "servicePitch"
+        ? servicesSheet.rows.map((row) => String(row.serviceName ?? "")).filter(Boolean)
+        : [];
+
+    return Array.from(new Set([...getColumnOptions(sheetKey, column), ...dynamicOptions]));
+  }, [filterColumnId, servicesSheet.rows, sheet.columns, sheetKey]);
 
   const setCustomDraft = (rowId: string, columnId: string, value: string) => {
     setCustomOptionDrafts((current) => ({
@@ -160,6 +297,23 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
 
         <div className="space-y-4 p-4">
           {error ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : null}
+
+          <div className="flex flex-wrap gap-2">
+            {quickViews.map((view) => (
+              <button
+                key={view.id}
+                type="button"
+                onClick={() => setQuickViewId(view.id)}
+                className={`rounded-full border px-3 py-2 text-sm font-medium transition ${
+                  quickViewId === view.id
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-white"
+                }`}
+              >
+                {view.label}
+              </button>
+            ))}
+          </div>
 
           <div className="grid gap-3 xl:grid-cols-[minmax(260px,1.2fr)_220px_220px_auto]">
             <div className="relative">
@@ -292,8 +446,12 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
                     <tr key={String(row.id)} className="group">
                       {sheet.columns.map((column) => {
                         const value = row[column.id];
-                        const options = getColumnOptions(sheetKey, column);
-                        const shouldUseSelect = column.type === "select" || options.length > 0;
+                        const dynamicOptions =
+                          sheetKey === "leads" && column.id === "servicePitch"
+                            ? servicesSheet.rows.map((item) => String(item.serviceName ?? "")).filter(Boolean)
+                            : [];
+                        const options = Array.from(new Set([...getColumnOptions(sheetKey, column), ...dynamicOptions]));
+                        const shouldUseSelect = shouldRenderAsSelect(sheetKey, column);
                         const draftKey = `${String(row.id)}:${column.id}`;
                         const isCustomMode = shouldUseSelect && String(value ?? "") === "__custom__";
 

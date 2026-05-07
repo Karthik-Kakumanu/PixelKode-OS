@@ -9,11 +9,23 @@ import { useBusinessStore } from "@/lib/store";
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const loadSheets = useBusinessStore((state) => state.loadSheets);
+  const syncPendingChanges = useBusinessStore((state) => state.syncPendingChanges);
 
   useEffect(() => {
     if (pathname === "/login") return;
     void loadSheets();
   }, [loadSheets, pathname]);
+
+  useEffect(() => {
+    if (pathname === "/login") return;
+
+    const handleOnline = () => {
+      void syncPendingChanges();
+    };
+
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, [pathname, syncPendingChanges]);
 
   return (
     <>

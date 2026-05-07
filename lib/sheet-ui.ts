@@ -24,7 +24,8 @@ const optionPresets: Partial<Record<SheetKey, Partial<Record<string, string[]>>>
   projects: {
     sector: ["Food", "Retail", "Healthcare", "Education", "Real Estate", "Creative", "Technology"],
     category: ["Website", "CRM", "Branding", "Automation", "Marketing", "E-commerce"],
-    domain: ["Restaurant", "Clinic", "Studio", "Agency", "Consulting", "Salon", "Builder"]
+    domain: ["Restaurant", "Clinic", "Studio", "Agency", "Consulting", "Salon", "Builder"],
+    completionPercent: ["0", "50", "100"]
   },
   leads: {
     category: ["Legal", "Fashion", "Healthcare", "Education", "Retail", "Hospitality", "Technology"]

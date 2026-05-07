@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { RightRail } from "@/components/app/right-rail";
 import { PageShell } from "@/components/layout/page-shell";
 import { isAuthenticated } from "@/lib/session";
 
@@ -10,5 +11,5 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect("/login");
   }
 
-  return <PageShell>{children}</PageShell>;
+  return <PageShell rightRail={<RightRail />}>{children}</PageShell>;
 }

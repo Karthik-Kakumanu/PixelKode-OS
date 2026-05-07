@@ -31,6 +31,15 @@ const tooltipStyle = {
   color: "#32284A"
 };
 
+function truncateProjectLabel(value: string, maxLength = 18) {
+  const trimmed = value.trim();
+  if (trimmed.length <= maxLength) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, maxLength - 3).trimEnd()}...`;
+}
+
 function compactProjectLabel(value: string, maxLength = 18) {
   const trimmed = value.trim();
   if (trimmed.length <= maxLength) {
@@ -50,7 +59,7 @@ function ProjectAxisTick({
   payload?: { value?: string };
 }) {
   const value = String(payload?.value ?? "");
-  const label = compactProjectLabel(value, 18);
+  const label = truncateProjectLabel(value, 18);
 
   return (
     <g transform={`translate(${x ?? 0},${y ?? 0})`}>
@@ -82,11 +91,11 @@ function ChartShell({
   return (
     <Card className={cn("h-[360px] overflow-hidden p-0", className)} style={style}>
       <div className="flex h-full flex-col">
-        <div className={cn("border-b border-white/80 bg-gradient-to-r from-white via-fuchsia-50/70 to-sky-50/70 px-6 py-5", headerClassName)}>
-          <h3 className="premium-heading text-xl font-semibold text-slate-900">{title}</h3>
+        <div className={cn("border-b border-slate-200 bg-slate-50 px-6 py-5", headerClassName)}>
+          <h3 className="text-xl font-semibold text-slate-950">{title}</h3>
           {subtitle ? <p className="mt-1.5 text-sm leading-6 text-slate-500">{subtitle}</p> : null}
         </div>
-        <div className={cn("min-h-0 flex-1 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.72),rgba(255,255,255,0.2))] px-4 pb-4 pt-3", bodyClassName)}>{children}</div>
+        <div className={cn("min-h-0 flex-1 bg-white px-4 pb-4 pt-3", bodyClassName)}>{children}</div>
       </div>
     </Card>
   );
@@ -143,19 +152,88 @@ export function StatusPieChart({
 }: {
   data: { name: string; value: number }[];
 }) {
+  const filteredData = data.filter((item) => item.value > 0);
+  const chartData = filteredData.length > 0 ? filteredData : [{ name: "No Data", value: 1 }];
+  const total = chartData.reduce((sum, item) => sum + item.value, 0);
+  const largestSlice = chartData.reduce((largest, item) => (item.value > largest.value ? item : largest), chartData[0]);
+  const isSingleSlice = chartData.length === 1;
+
   return (
-    <ChartShell title="Project Status Mix" subtitle="Completion state across all projects">
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart>
-          <Tooltip contentStyle={tooltipStyle} />
-          <Legend />
-          <Pie data={data} dataKey="value" nameKey="name" innerRadius={68} outerRadius={108} paddingAngle={5} isAnimationActive={false}>
-            {data.map((item, index) => (
-              <Cell key={item.name} fill={pieColors[index % pieColors.length]} />
-            ))}
-          </Pie>
-        </PieChart>
-      </ResponsiveContainer>
+    <ChartShell
+      title="Project Status Mix"
+      subtitle="Completion state across all projects"
+      className="h-[470px]"
+      bodyClassName="px-4 pb-6 pt-3"
+    >
+      <div className="flex h-full flex-col gap-4 px-2 pb-2 pt-1">
+        <div className="h-[180px] shrink-0">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Tooltip
+                contentStyle={tooltipStyle}
+                formatter={(value: number, _name, item) => {
+                  const percent = total > 0 ? Math.round((Number(value) / total) * 100) : 0;
+                  return [`${value} projects | ${percent}%`, item.payload?.name ?? ""];
+                }}
+              />
+              <Pie
+                data={chartData}
+                dataKey="value"
+                nameKey="name"
+                cx="50%"
+                cy="50%"
+                innerRadius={48}
+                outerRadius={76}
+                paddingAngle={isSingleSlice ? 0 : 2}
+                cornerRadius={isSingleSlice ? 0 : 10}
+                stroke={isSingleSlice ? "none" : "#ffffff"}
+                strokeWidth={isSingleSlice ? 0 : 4}
+                isAnimationActive={false}
+              >
+                {chartData.map((item, index) => (
+                  <Cell key={item.name} fill={pieColors[index % pieColors.length]} />
+                ))}
+              </Pie>
+              <text x="50%" y="46%" textAnchor="middle" dominantBaseline="central" className="fill-slate-950 text-[24px] font-semibold">
+                {total}
+              </text>
+              <text x="50%" y="58%" textAnchor="middle" dominantBaseline="central" className="fill-slate-500 text-[10px] font-medium uppercase tracking-[0.18em]">
+                Projects
+              </text>
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="grid gap-2">
+          {chartData.map((item, index) => {
+            const percent = total > 0 ? Math.round((item.value / total) * 100) : 0;
+
+            return (
+              <div
+                key={item.name}
+                className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+              >
+                <div className="flex items-center gap-3">
+                  <span
+                    className="h-3.5 w-3.5 rounded-full"
+                    style={{ backgroundColor: pieColors[index % pieColors.length] }}
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-slate-800">{item.name}</p>
+                    <p className="text-xs text-slate-500">{percent}% of all projects</p>
+                  </div>
+                </div>
+                <p className="text-base font-semibold text-slate-950">{item.value}</p>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+          <span className="font-medium text-slate-900">{largestSlice.name}</span> is the largest bucket right now at{" "}
+          {total > 0 ? Math.round((largestSlice.value / total) * 100) : 0}%.
+        </div>
+      </div>
     </ChartShell>
   );
 }
@@ -299,16 +377,21 @@ export function ServiceDemandMixChart({
   data: { name: string; leads: number; projects: number }[];
 }) {
   return (
-    <ChartShell title="Service Demand Board" subtitle="Leads flowing into each offer vs projects delivered">
+    <ChartShell
+      title="Service Demand Board"
+      subtitle="Leads flowing into each offer vs projects delivered"
+      className="h-[340px]"
+      bodyClassName="px-4 pb-3 pt-3"
+    >
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data}>
+        <BarChart data={data} barCategoryGap={22}>
           <CartesianGrid stroke={gridStroke} vertical={false} />
-          <XAxis dataKey="name" stroke={axisStroke} />
+          <XAxis dataKey="name" stroke={axisStroke} tick={{ fontSize: 12 }} interval={0} />
           <YAxis stroke={axisStroke} />
           <Tooltip contentStyle={tooltipStyle} />
           <Legend />
-          <Bar dataKey="leads" fill="#ff5fa2" radius={[12, 12, 0, 0]} isAnimationActive={false} />
-          <Bar dataKey="projects" fill="#1cc8c0" radius={[12, 12, 0, 0]} isAnimationActive={false} />
+          <Bar dataKey="leads" fill="#ff5fa2" radius={[12, 12, 0, 0]} maxBarSize={34} isAnimationActive={false} />
+          <Bar dataKey="projects" fill="#1cc8c0" radius={[12, 12, 0, 0]} maxBarSize={34} isAnimationActive={false} />
         </BarChart>
       </ResponsiveContainer>
     </ChartShell>
@@ -356,17 +439,17 @@ export function ProjectProgressChart({
         </div>
 
         <div className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-2xl border border-white/80 bg-white/70 px-5 py-4">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
             <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400">Tracked Projects</p>
             <p className="mt-2 text-2xl font-semibold text-slate-900">{trackedProjects.length}</p>
             <p className="mt-2 text-sm text-slate-500">Projects included in this progress board</p>
           </div>
-          <div className="rounded-2xl border border-white/80 bg-white/70 px-5 py-4">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
             <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400">Average Completion</p>
             <p className="mt-2 text-2xl font-semibold text-slate-900">{averageProgress}%</p>
             <p className="mt-2 text-sm text-slate-500">Across the currently visible projects</p>
           </div>
-          <div className="rounded-2xl border border-white/80 bg-white/70 px-5 py-4">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
             <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400">Pending Value</p>
             <p className="mt-2 text-2xl font-semibold text-slate-900">{totalPending}k</p>
             <p className="mt-2 text-sm text-slate-500">
@@ -385,14 +468,19 @@ export function OpsPulseChart({
   data: { name: string; value: number }[];
 }) {
   return (
-    <ChartShell title="Operating Snapshot" subtitle="Current pulse across projects, leads, services, and content">
+    <ChartShell
+      title="Operating Snapshot"
+      subtitle="Current pulse across projects, leads, services, and content"
+      className="h-[340px]"
+      bodyClassName="px-4 pb-3 pt-3"
+    >
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data}>
+        <BarChart data={data} barCategoryGap={28}>
           <CartesianGrid stroke={gridStroke} vertical={false} />
-          <XAxis dataKey="name" stroke={axisStroke} />
+          <XAxis dataKey="name" stroke={axisStroke} tick={{ fontSize: 12 }} interval={0} />
           <YAxis stroke={axisStroke} />
           <Tooltip contentStyle={tooltipStyle} />
-          <Bar dataKey="value" radius={[14, 14, 0, 0]} isAnimationActive={false}>
+          <Bar dataKey="value" radius={[14, 14, 0, 0]} maxBarSize={72} isAnimationActive={false}>
             {data.map((item, index) => (
               <Cell key={item.name} fill={pieColors[index % pieColors.length]} />
             ))}

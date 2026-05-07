@@ -3,21 +3,27 @@
 import { create } from "zustand";
 
 import { createDefaultSheets } from "@/lib/data";
-import type { CellValue, SheetColumn, SheetData, SheetKey, SheetRow } from "@/lib/types";
+import { deriveOperationalAlerts } from "@/lib/operations";
+import type { CellValue, OperationAlert, SheetColumn, SheetData, SheetKey, SheetRow } from "@/lib/types";
 
 interface BusinessStore {
   sheets: Record<SheetKey, SheetData>;
+  alerts: OperationAlert[];
+  readAlertIds: string[];
   isLoaded: boolean;
   isSaving: boolean;
   error: string;
   loadSheets: () => Promise<void>;
+  syncPendingChanges: () => Promise<void>;
   addRow: (sheet: SheetKey) => void;
-  addRowWithValues: (sheet: SheetKey, values: Record<string, CellValue>) => void;
+  addRowWithValues: (sheet: SheetKey, values: Record<string, CellValue>, keepUnspecifiedEmpty?: boolean) => void;
   deleteRow: (sheet: SheetKey, rowIndex: number) => void;
   updateCell: (sheet: SheetKey, rowIndex: number, columnId: string, value: CellValue) => void;
   addColumn: (sheet: SheetKey, column: SheetColumn) => void;
   deleteColumn: (sheet: SheetKey, columnId: string) => void;
   addColumnOption: (sheet: SheetKey, columnId: string, option: string) => void;
+  markAlertRead: (alertId: string) => void;
+  markAllAlertsRead: () => void;
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -25,6 +31,45 @@ let queuedSheets: Record<SheetKey, SheetData> | null = null;
 let activeSaveRequest = 0;
 
 const PROJECT_REVENUE_SYNC_SOURCE = "project_income_sync";
+const LOCAL_CACHE_KEY = "pixelkode_os_cached_sheets";
+const LOCAL_PENDING_KEY = "pixelkode_os_pending_sheets";
+
+function canUseStorage() {
+  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+}
+
+function readStoredSheets(key: string) {
+  if (!canUseStorage()) return null;
+
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+
+    return JSON.parse(raw) as Record<SheetKey, SheetData>;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredSheets(key: string, sheets: Record<SheetKey, SheetData>) {
+  if (!canUseStorage()) return;
+
+  try {
+    window.localStorage.setItem(key, JSON.stringify(sheets));
+  } catch {
+    // Ignore storage quota or serialization issues and continue with app state.
+  }
+}
+
+function clearStoredSheets(key: string) {
+  if (!canUseStorage()) return;
+
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // Ignore storage cleanup failures.
+  }
+}
 
 function normalizeSyncText(value: unknown) {
   return String(value ?? "")
@@ -38,6 +83,17 @@ function makeEmptyRow(columns: SheetColumn[], prefix: string, length: number): S
   columns.forEach((column) => {
     if (column.id === "id") return;
     nextRow[column.id] = column.type === "number" ? 0 : "";
+  });
+
+  return nextRow;
+}
+
+function makeAssistantRow(columns: SheetColumn[], prefix: string, length: number): SheetRow {
+  const nextRow: SheetRow = { id: `${prefix}-${length + 1}` };
+
+  columns.forEach((column) => {
+    if (column.id === "id") return;
+    nextRow[column.id] = "";
   });
 
   return nextRow;
@@ -59,13 +115,22 @@ function syncProjectDerivedFields(rows: SheetRow[]) {
     const amountReceived = clampNumber(row.amountReceived, 0, projectValue);
     const completionPercent = clampNumber(row.completionPercent, 0, 100);
     const pendingAmount = Math.max(projectValue - amountReceived, 0);
+    const paymentStatus =
+      amountReceived >= projectValue && projectValue > 0
+        ? "Paid"
+        : amountReceived > 0
+          ? "Partially Paid"
+          : "Pending";
+    const projectStatus = completionPercent >= 100 ? "Completed" : row.projectStatus;
 
     return {
       ...row,
       projectValue,
       amountReceived,
       completionPercent,
-      pendingAmount
+      pendingAmount,
+      paymentStatus,
+      projectStatus
     };
   });
 }
@@ -150,9 +215,14 @@ async function persistSheets(sheets: Record<SheetKey, SheetData>, set: (partial:
     if (!response.ok) {
       throw new Error(`Save failed (${response.status})`);
     }
+
+    writeStoredSheets(LOCAL_CACHE_KEY, sheets);
+    clearStoredSheets(LOCAL_PENDING_KEY);
   } catch (error) {
     console.error(error);
-    set({ error: "Failed to save securely to the Railway database." });
+    writeStoredSheets(LOCAL_CACHE_KEY, sheets);
+    writeStoredSheets(LOCAL_PENDING_KEY, sheets);
+    set({ error: "Offline mode active. Changes are saved on this device and will sync automatically." });
   } finally {
     if (requestId === activeSaveRequest) {
       set({ isSaving: false });
@@ -163,6 +233,8 @@ async function persistSheets(sheets: Record<SheetKey, SheetData>, set: (partial:
 function queuePersist(sheets: Record<SheetKey, SheetData>, set: (partial: Partial<BusinessStore>) => void) {
   queuedSheets = sheets;
   set({ isSaving: true, error: "" });
+  writeStoredSheets(LOCAL_CACHE_KEY, sheets);
+  writeStoredSheets(LOCAL_PENDING_KEY, sheets);
 
   if (saveTimer) {
     clearTimeout(saveTimer);
@@ -178,19 +250,69 @@ function queuePersist(sheets: Record<SheetKey, SheetData>, set: (partial: Partia
       return;
     }
 
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      set({ isSaving: false, error: "Offline mode active. Changes are saved on this device and will sync automatically." });
+      return;
+    }
+
     void persistSheets(nextSheets, set);
   }, 400);
 }
 
+function buildOperationalState(sheets: Record<SheetKey, SheetData>, readAlertIds: string[]) {
+  const alerts = deriveOperationalAlerts(sheets);
+  const validReadAlertIds = readAlertIds.filter((alertId) => alerts.some((alert) => alert.id === alertId));
+
+  return {
+    sheets,
+    alerts,
+    readAlertIds: validReadAlertIds
+  };
+}
+
 export const useBusinessStore = create<BusinessStore>((set, get) => ({
   sheets: createDefaultSheets(),
+  alerts: deriveOperationalAlerts(createDefaultSheets()),
+  readAlertIds: [],
   isLoaded: false,
   isSaving: false,
   error: "",
   loadSheets: async () => {
     if (get().isLoaded) return;
 
+    const cachedSheets = readStoredSheets(LOCAL_CACHE_KEY);
+    const pendingSheets = readStoredSheets(LOCAL_PENDING_KEY);
+    const localSheets = pendingSheets ?? cachedSheets;
+
+    if (localSheets) {
+      const syncedLocalSheets = syncRevenueFromProjects(localSheets);
+      const localState = buildOperationalState(syncedLocalSheets, get().readAlertIds);
+
+      set({
+        sheets: localState.sheets,
+        alerts: localState.alerts,
+        readAlertIds: localState.readAlertIds,
+        isLoaded: true,
+        error: pendingSheets ? "Offline changes are waiting to sync." : ""
+      });
+    }
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      if (!localSheets) {
+        set({
+          sheets: createDefaultSheets(),
+          isLoaded: true,
+          error: "Offline and no local cache found yet."
+        });
+      }
+      return;
+    }
+
     try {
+      if (pendingSheets) {
+        await persistSheets(syncRevenueFromProjects(pendingSheets), set);
+      }
+
       const response = await fetch("/api/business-state", {
         cache: "no-store"
       });
@@ -201,20 +323,46 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
 
       const payload = (await response.json()) as { sheets?: Record<SheetKey, SheetData> };
       const syncedSheets = syncRevenueFromProjects(payload.sheets ?? createDefaultSheets());
+      const nextState = buildOperationalState(syncedSheets, get().readAlertIds);
 
       set({
-        sheets: syncedSheets,
+        sheets: nextState.sheets,
+        alerts: nextState.alerts,
+        readAlertIds: nextState.readAlertIds,
         isLoaded: true,
         error: ""
       });
+      writeStoredSheets(LOCAL_CACHE_KEY, nextState.sheets);
     } catch (error) {
       console.error(error);
-      set({
-        sheets: createDefaultSheets(),
-        isLoaded: true,
-        error: "Railway data could not be loaded from the database."
-      });
+      if (!localSheets) {
+        set({
+          sheets: createDefaultSheets(),
+          isLoaded: true,
+          error: "Railway data could not be loaded and no local cache was found."
+        });
+      } else {
+        set({
+          isLoaded: true,
+          error: pendingSheets
+            ? "Offline changes are still stored locally and will sync when the connection returns."
+            : "Loaded from local cache. Server sync will retry automatically."
+        });
+      }
     }
+  },
+  syncPendingChanges: async () => {
+    const pendingSheets = readStoredSheets(LOCAL_PENDING_KEY);
+
+    if (!pendingSheets) {
+      return;
+    }
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      return;
+    }
+
+    await persistSheets(syncRevenueFromProjects(pendingSheets), set);
   },
   addRow: (sheet) => {
     const current = get().sheets[sheet];
@@ -226,14 +374,17 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       }
     };
     const sheets = syncRevenueFromProjects(nextSheets);
+    const nextState = buildOperationalState(sheets, get().readAlertIds);
 
-    set({ sheets });
+    set(nextState);
     queuePersist(sheets, set);
   },
-  addRowWithValues: (sheet, values) => {
+  addRowWithValues: (sheet, values, keepUnspecifiedEmpty = false) => {
     const current = get().sheets[sheet];
     const nextRow = {
-      ...makeEmptyRow(current.columns, sheet, current.rows.length),
+      ...(keepUnspecifiedEmpty
+        ? makeAssistantRow(current.columns, sheet, current.rows.length)
+        : makeEmptyRow(current.columns, sheet, current.rows.length)),
       ...values
     };
     const nextSheets = {
@@ -244,8 +395,9 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       }
     };
     const sheets = syncRevenueFromProjects(nextSheets);
+    const nextState = buildOperationalState(sheets, get().readAlertIds);
 
-    set({ sheets });
+    set(nextState);
     queuePersist(sheets, set);
   },
   deleteRow: (sheet, rowIndex) => {
@@ -259,8 +411,9 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       }
     };
     const sheets = syncRevenueFromProjects(nextSheets);
+    const nextState = buildOperationalState(sheets, get().readAlertIds);
 
-    set({ sheets });
+    set(nextState);
     queuePersist(sheets, set);
   },
   updateCell: (sheet, rowIndex, columnId, value) => {
@@ -274,8 +427,9 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       }
     };
     const sheets = syncRevenueFromProjects(nextSheets);
+    const nextState = buildOperationalState(sheets, get().readAlertIds);
 
-    set({ sheets });
+    set(nextState);
     queuePersist(sheets, set);
   },
   addColumn: (sheet, column) => {
@@ -292,8 +446,9 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       }
     };
     const sheets = syncRevenueFromProjects(nextSheets);
+    const nextState = buildOperationalState(sheets, get().readAlertIds);
 
-    set({ sheets });
+    set(nextState);
     queuePersist(sheets, set);
   },
   deleteColumn: (sheet, columnId) => {
@@ -318,8 +473,9 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       }
     };
     const sheets = syncRevenueFromProjects(nextSheets);
+    const nextState = buildOperationalState(sheets, get().readAlertIds);
 
-    set({ sheets });
+    set(nextState);
     queuePersist(sheets, set);
   },
   addColumnOption: (sheet, columnId, option) => {
@@ -358,8 +514,18 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       }
     };
     const sheets = syncRevenueFromProjects(nextSheets);
+    const nextState = buildOperationalState(sheets, get().readAlertIds);
 
-    set({ sheets });
+    set(nextState);
     queuePersist(sheets, set);
+  },
+  markAlertRead: (alertId) => {
+    const { readAlertIds } = get();
+    if (readAlertIds.includes(alertId)) return;
+
+    set({ readAlertIds: [...readAlertIds, alertId] });
+  },
+  markAllAlertsRead: () => {
+    set({ readAlertIds: get().alerts.map((alert) => alert.id) });
   }
 }));

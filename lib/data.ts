@@ -102,7 +102,13 @@ export const defaultSheets: Record<SheetKey, SheetData> = {
       { id: "businessName", label: "Business Name", type: "text", width: "180px" },
       { id: "contactName", label: "Contact Name", type: "text", width: "150px" },
       { id: "category", label: "Category", type: "text", width: "130px" },
-      { id: "servicePitch", label: "Service To Offer", type: "text", width: "180px" },
+      {
+        id: "servicePitch",
+        label: "Service To Offer",
+        type: "select",
+        options: ["Business Website", "CRM Automation", "Content Growth System"],
+        width: "190px"
+      },
       {
         id: "callStatus",
         label: "Call Status",

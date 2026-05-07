@@ -24,3 +24,16 @@ export interface DashboardMetric {
   value: string;
   helper: string;
 }
+
+export type AlertSeverity = "high" | "medium" | "low";
+
+export interface OperationAlert {
+  id: string;
+  title: string;
+  message: string;
+  severity: AlertSeverity;
+  sheet: SheetKey;
+  rowId?: string;
+  dueDate?: string;
+  actionLabel?: string;
+}

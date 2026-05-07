@@ -88,7 +88,7 @@ const singularLabel: Record<SheetKey, string> = {
   services: "service"
 };
 
-type AssistantIntent = "add-row" | "edit-row" | "add-column";
+type AssistantIntent = "add-row" | "edit-row" | "add-column" | "delete-row";
 
 function inferSheetKey(pathname: string): SheetKey | null {
   const segment = pathname.split("/")[1];
@@ -105,11 +105,20 @@ function detectSheetKey(prompt: string, pathname: string): SheetKey | null {
       lowerPrompt.startsWith(sheetKey)
   );
 
-  return explicitMatch ?? inferSheetKey(pathname) ?? "projects";
+  return explicitMatch ?? inferSheetKey(pathname);
 }
 
 function detectIntent(prompt: string): AssistantIntent {
   const lowerPrompt = prompt.toLowerCase();
+
+  if (
+    lowerPrompt.includes("delete ") ||
+    lowerPrompt.includes("remove ") ||
+    lowerPrompt.includes("delete last") ||
+    lowerPrompt.includes("remove last")
+  ) {
+    return "delete-row";
+  }
 
   if (lowerPrompt.includes("add column") || lowerPrompt.includes("new column") || lowerPrompt.includes("create column")) {
     return "add-column";
@@ -128,6 +137,19 @@ function detectIntent(prompt: string): AssistantIntent {
   return "add-row";
 }
 
+function extractDeleteCount(prompt: string) {
+  const match = prompt.match(/(?:delete|remove)\s+(?:the\s+)?last\s+(\d+)\s+rows?/i);
+  if (match?.[1]) {
+    return Math.max(1, Number(match[1]));
+  }
+
+  if (/(?:delete|remove)\s+(?:the\s+)?last\s+row/i.test(prompt)) {
+    return 1;
+  }
+
+  return null;
+}
+
 function castAssistantValue(column: SheetColumn, rawValue: string): CellValue {
   if (column.type === "number") {
     const numeric = rawValue.replace(/[^0-9.]/g, "");
@@ -140,6 +162,7 @@ function castAssistantValue(column: SheetColumn, rawValue: string): CellValue {
 function cleanExtractedValue(value: string) {
   return value
     .replace(/^["']|["']$/g, "")
+    .replace(/^(?:named|called|naming)\s+/i, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -216,7 +239,13 @@ function inferLikelyStatusColumn(sheetKey: SheetKey, columns: SheetColumn[], pro
   return null;
 }
 
-function extractFromPrompt(prompt: string, sheetKey: SheetKey, columns: SheetColumn[], existingDraft: Record<string, CellValue>) {
+function extractFromPrompt(
+  prompt: string,
+  sheetKey: SheetKey,
+  columns: SheetColumn[],
+  existingDraft: Record<string, CellValue>,
+  options?: { explicitOnly?: boolean }
+) {
   const lowerPrompt = prompt.toLowerCase();
   const nextValues: Record<string, CellValue> = { ...existingDraft };
 
@@ -228,6 +257,8 @@ function extractFromPrompt(prompt: string, sheetKey: SheetKey, columns: SheetCol
     for (const alias of aliases) {
       const patterns = [
         new RegExp(`(?:set|change|edit|update)\\s+${escapeRegExp(alias)}\\s+(?:to|as|=|:)?\\s*([^,.;\\n]+?)(?=\\s+(?:and|with)\\s+[a-z]|[,.;\\n]|$)`, "i"),
+        new RegExp(`(?:${escapeRegExp(alias)})\\s+is\\s+([^,.;\\n]+?)(?=\\s+(?:and|with|keep)\\s+[a-z]|[,.;\\n]|$)`, "i"),
+        new RegExp(`(?:${escapeRegExp(alias)})\\s+(?:named|called|naming)\\s+([^,.;\\n]+?)(?=\\s+(?:and|with|keep|leave)\\s+[a-z]|[,.;\\n]|$)`, "i"),
         new RegExp(`${escapeRegExp(alias)}\\s*(?:to|as|is|=|:)?\\s*([^,.;\\n]+?)(?=\\s+(?:and|with)\\s+[a-z]|[,.;\\n]|$)`, "i")
       ];
 
@@ -251,8 +282,9 @@ function extractFromPrompt(prompt: string, sheetKey: SheetKey, columns: SheetCol
   if (primaryColumn && !nextValues[primaryColumn.id]) {
     const namePatterns = [
       /(?:named|called)\s+([^,.;\n]+?)(?=\s+(?:with|and)\s+[a-z]|[,.;\n]|$)/i,
+      /(?:naming)\s+([^,.;\n]+?)(?=\s+(?:with|and|keep|leave)\s+[a-z]|[,.;\n]|$)/i,
       /(?:for|of)\s+([^,.;\n]+?)(?=\s+(?:with|and)\s+[a-z]|[,.;\n]|$)/i,
-      /(?:add|create)\s+(?:a|an)?\s*[a-z\s]*?(?:named|called)?\s*([^,.;\n]+?)(?=\s+(?:with|and)\s+[a-z]|[,.;\n]|$)/i
+      /(?:add|create)\s+(?:a|an)?\s*[a-z\s]*?(?:named|called|naming)?\s*([^,.;\n]+?)(?=\s+(?:with|and|keep|leave)\s+[a-z]|[,.;\n]|$)/i
     ];
 
     for (const pattern of namePatterns) {
@@ -267,9 +299,23 @@ function extractFromPrompt(prompt: string, sheetKey: SheetKey, columns: SheetCol
     }
   }
 
-  applyLooseOptionMatches(prompt, sheetKey, columns, nextValues);
+  if (!options?.explicitOnly) {
+    applyLooseOptionMatches(prompt, sheetKey, columns, nextValues);
+  }
 
   return nextValues;
+}
+
+function shouldKeepRemainingFieldsEmpty(prompt: string) {
+  return /(?:keep|leave).*(?:remaining|rest|other).*(?:empty|blank)/i.test(prompt) || /all fields.*(?:empty|blank)/i.test(prompt);
+}
+
+function shouldUseLiteralMode(prompt: string) {
+  return (
+    shouldKeepRemainingFieldsEmpty(prompt) ||
+    /\b(?:exactly|strictly|only|just)\b/i.test(prompt) ||
+    /(?:do not|don't)\s+(?:change|fill|set|touch|update|guess)/i.test(prompt)
+  );
 }
 
 function missingColumns(sheetKey: SheetKey, columns: SheetColumn[], values: Record<string, CellValue>) {
@@ -338,6 +384,7 @@ export function SmartAssistant() {
   const sheets = useBusinessStore((state) => state.sheets);
   const addRowWithValues = useBusinessStore((state) => state.addRowWithValues);
   const addColumn = useBusinessStore((state) => state.addColumn);
+  const deleteRow = useBusinessStore((state) => state.deleteRow);
   const updateCell = useBusinessStore((state) => state.updateCell);
 
   const [open, setOpen] = useState(false);
@@ -362,7 +409,11 @@ export function SmartAssistant() {
     const trimmed = prompt.trim();
     if (!trimmed) return;
 
-    const targetSheetKey = detectSheetKey(trimmed, pathname);
+    const targetSheetKey =
+      detectSheetKey(trimmed, pathname) ??
+      activeSheetKey ??
+      inferSheetKey(pathname) ??
+      "projects";
     const targetSheet = targetSheetKey ? sheets[targetSheetKey] : null;
 
     if (!targetSheetKey || !targetSheet) {
@@ -396,7 +447,50 @@ export function SmartAssistant() {
       return;
     }
 
+    if (intent === "delete-row") {
+      const deleteCount = extractDeleteCount(trimmed);
+
+      if (deleteCount !== null) {
+        if (targetSheet.rows.length === 0) {
+          setMessages((current) => [...current, `There are no rows to delete in ${targetSheetKey}.`]);
+          setPrompt("");
+          return;
+        }
+
+        const safeCount = Math.min(deleteCount, targetSheet.rows.length);
+
+        for (let index = 0; index < safeCount; index += 1) {
+          deleteRow(targetSheetKey, targetSheet.rows.length - 1 - index);
+        }
+
+        setDraft({});
+        setMessages((current) => [
+          ...current,
+          `Deleted the last ${safeCount} row${safeCount === 1 ? "" : "s"} from ${targetSheetKey}.`
+        ]);
+        setPrompt("");
+        return;
+      }
+
+      const rowMatch = findBestRowMatch(trimmed, targetSheetKey, targetSheet);
+      if (!rowMatch) {
+        setMessages((current) => [
+          ...current,
+          `Tell me exactly which ${singularLabel[targetSheetKey]} to delete, or say "delete the last 2 rows".`
+        ]);
+        setPrompt("");
+        return;
+      }
+
+      deleteRow(targetSheetKey, rowMatch.rowIndex);
+      setDraft({});
+      setMessages((current) => [...current, `Deleted ${rowMatch.primaryValue || singularLabel[targetSheetKey]} from ${targetSheetKey}.`]);
+      setPrompt("");
+      return;
+    }
+
     if (intent === "edit-row") {
+      const literalMode = shouldUseLiteralMode(trimmed);
       const rowMatch = findBestRowMatch(trimmed, targetSheetKey, targetSheet);
       if (!rowMatch) {
         setMessages((current) => [
@@ -407,9 +501,9 @@ export function SmartAssistant() {
         return;
       }
 
-      const nextValues = extractFromPrompt(trimmed, targetSheetKey, targetSheet.columns, {});
+      const nextValues = extractFromPrompt(trimmed, targetSheetKey, targetSheet.columns, {}, { explicitOnly: literalMode });
       const likelyStatus = inferLikelyStatusColumn(targetSheetKey, targetSheet.columns, trimmed);
-      if (likelyStatus && nextValues[likelyStatus.column.id] === undefined) {
+      if (!literalMode && likelyStatus && nextValues[likelyStatus.column.id] === undefined) {
         nextValues[likelyStatus.column.id] = likelyStatus.value;
       }
       const changedColumns = targetSheet.columns.filter(
@@ -438,7 +532,9 @@ export function SmartAssistant() {
       return;
     }
 
-    const nextDraft = extractFromPrompt(trimmed, targetSheetKey, targetSheet.columns, draft);
+    const literalMode = shouldUseLiteralMode(trimmed);
+    const keepRemainingEmpty = shouldKeepRemainingFieldsEmpty(trimmed);
+    const nextDraft = extractFromPrompt(trimmed, targetSheetKey, targetSheet.columns, {}, { explicitOnly: literalMode });
     const primaryColumnId = getPrimaryColumn(targetSheetKey);
     const primaryColumn = targetSheet.columns.find((column) => column.id === primaryColumnId);
     const nextMissing = getEmptyRequiredColumns(targetSheetKey, targetSheet.columns, nextDraft);
@@ -447,13 +543,13 @@ export function SmartAssistant() {
       setDraft(nextDraft);
       setMessages((current) => [
         ...current,
-        `Tell me the ${primaryColumn?.label ?? "main name"} and I can add it. Example: add project named Website Revamp.`
+        `Tell me the ${primaryColumn?.label ?? "main name"} clearly. Example: add project named Website Revamp.`
       ]);
       setPrompt("");
       return;
     }
 
-    addRowWithValues(targetSheetKey, nextDraft);
+    addRowWithValues(targetSheetKey, nextDraft, keepRemainingEmpty || literalMode);
     setDraft({});
     setMessages((current) => [
       ...current,
