@@ -12,6 +12,14 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   const syncPendingChanges = useBusinessStore((state) => state.syncPendingChanges);
 
   useEffect(() => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+
+    void navigator.serviceWorker.register("/sw.js").catch((error) => {
+      console.error("Service worker registration failed", error);
+    });
+  }, []);
+
+  useEffect(() => {
     if (pathname === "/login") return;
     void loadSheets();
   }, [loadSheets, pathname]);
