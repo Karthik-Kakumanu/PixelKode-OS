@@ -25,6 +25,7 @@ export function MobileNav() {
           <Link
             key={item.href}
             href={item.href}
+            suppressHydrationWarning
             className={cn(
               "rounded-2xl px-4 py-2 text-sm transition",
               pathname === item.href ? "bg-white/10 text-white" : "text-slate-400 hover:bg-white/5 hover:text-white"

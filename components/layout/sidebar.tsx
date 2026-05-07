@@ -3,16 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import React from "react";
-import {
-  BriefcaseBusiness,
-  ChartColumnBig,
-  CircleDollarSign,
-  FileText,
-  LayoutDashboard,
-  PanelLeftClose,
-  Sparkles,
-  Users
-} from "lucide-react";
+import { BriefcaseBusiness, ChartColumnBig, CircleDollarSign, FileText, LayoutDashboard, PanelLeftClose, Sparkles, Users } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -72,46 +63,52 @@ export function Sidebar({
 
       <aside
         className={cn(
-          "glass-panel hidden shrink-0 flex-col rounded-[32px] transition-all duration-300 md:flex",
-          expanded ? "w-[264px] p-5" : "w-[86px] p-3"
+          "glass-panel hidden shrink-0 flex-col rounded-[28px] border-white/80 transition-all duration-300 md:flex",
+          expanded ? "w-[214px] p-3" : "w-[76px] p-2.5"
         )}
       >
         <div className="flex h-full flex-col">
-          <div className={cn("flex items-center gap-3", expanded ? "mb-8" : "mb-6 justify-center")}>
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-brand-gradient text-lg font-semibold text-white">
-              P
-            </div>
-            {expanded ? (
-              <div>
-                <p className="text-sm text-slate-500">Private business monitor</p>
-                <h2 className="text-xl font-semibold">Pixelkode OS</h2>
+          <div
+            className={cn(
+              "rounded-[22px] border border-white/80 bg-white/60",
+              expanded ? "mb-4 p-3" : "mb-4 p-2.5"
+            )}
+          >
+            <div className={cn("flex items-center gap-3", expanded ? "" : "justify-center")}>
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-fuchsia-500 via-violet-500 to-sky-500 text-base font-semibold text-white shadow-[0_10px_24px_rgba(124,108,255,0.22)]">
+                P
               </div>
-            ) : null}
+              {expanded ? (
+                <div className="min-w-0">
+                  <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-slate-400">Ops</p>
+                  <h2 className="premium-heading truncate text-2xl font-semibold leading-none">Pixelkode</h2>
+                </div>
+              ) : null}
+            </div>
           </div>
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className={cn("mb-5", expanded ? "self-end" : "mx-auto")}
-            onClick={() => setExpanded((value) => !value)}
-            aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
-          >
-            <PanelLeftClose className={cn("h-5 w-5 transition-transform", expanded ? "rotate-180" : "rotate-0")} />
-          </Button>
-
-          <SidebarLinks pathname={pathname} expanded={expanded} />
+          <div className={cn("mb-3 flex items-center", expanded ? "justify-end px-1" : "justify-center")}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-2xl border border-white/70 bg-white/60"
+              onClick={() => setExpanded((value) => !value)}
+              aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
+            >
+              <PanelLeftClose className={cn("h-4 w-4 text-slate-600 transition-transform", expanded ? "rotate-180" : "rotate-0")} />
+            </Button>
+          </div>
 
           {expanded ? (
-            <div className="mt-auto rounded-[24px] border border-violet-100 bg-gradient-to-br from-rose-100/90 via-violet-100/90 to-sky-100/90 p-4">
-              <div className="flex items-center gap-3">
-                <ChartColumnBig className="h-5 w-5 text-violet-700" />
-                <p className="text-sm font-medium text-slate-900">Growth board</p>
-              </div>
-              <p className="mt-2 text-sm text-slate-600">
-                Keep projects, money, leads, services, and delivery in one place.
-              </p>
+            <div className="mb-3 px-1">
+              <p className="text-[10px] font-medium uppercase tracking-[0.24em] text-slate-400">Navigation</p>
             </div>
           ) : null}
+
+          <div className="flex-1">
+            <SidebarLinks pathname={pathname} expanded={expanded} />
+          </div>
+
         </div>
       </aside>
     </>
@@ -128,7 +125,7 @@ function SidebarLinks({
   expanded: boolean;
 }) {
   return (
-    <nav className="space-y-2">
+    <nav className="space-y-1">
       {items.map((item) => {
         const Icon = item.icon;
         const active = pathname === item.href;
@@ -138,17 +135,26 @@ function SidebarLinks({
             key={item.href}
             href={item.href}
             onClick={onNavigate}
+            suppressHydrationWarning
             className={cn(
-              "group flex items-center rounded-2xl transition-all",
-              expanded ? "gap-3 px-4 py-3 text-sm" : "justify-center px-0 py-3",
+              "group flex items-center rounded-[18px] transition-all duration-200",
+              expanded ? "gap-3 px-2.5 py-2.5 text-[15px]" : "justify-center px-0 py-2.5",
               active
-                ? "bg-white/80 text-slate-900 shadow-lg shadow-violet-100/60"
-                : "text-slate-600 hover:bg-white/55 hover:text-slate-900"
+                ? "bg-gradient-to-r from-white via-fuchsia-50/90 to-sky-50/90 text-slate-900 shadow-[0_14px_30px_rgba(158,138,255,0.2)]"
+                : "text-slate-600 hover:bg-white/65 hover:text-slate-900"
             )}
             title={item.label}
           >
-            <Icon className="h-4 w-4 shrink-0" />
-            {expanded ? <span>{item.label}</span> : null}
+            <span
+              className={cn(
+                "flex shrink-0 items-center justify-center rounded-xl",
+                expanded ? "h-8 w-8" : "h-9 w-9",
+                active ? "bg-white shadow-sm" : "bg-transparent"
+              )}
+            >
+              <Icon className={cn("h-[18px] w-[18px] shrink-0", active ? "text-fuchsia-600" : "text-slate-500")} />
+            </span>
+            {expanded ? <span className="font-medium">{item.label}</span> : null}
           </Link>
         );
       })}

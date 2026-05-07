@@ -13,12 +13,12 @@ export function PageHeader({
   actionLabel?: string;
 }) {
   return (
-    <div className="mb-6 flex flex-col gap-4 rounded-[28px] border border-violet-100 bg-white/60 p-6 lg:flex-row lg:items-end lg:justify-between">
-      <div className="space-y-3">
+    <div className="mb-4 flex flex-col gap-3 rounded-[24px] border border-white/80 bg-white/70 px-5 py-4 shadow-[0_14px_38px_rgba(66,32,118,0.08)] lg:flex-row lg:items-center lg:justify-between">
+      <div className="space-y-2">
         <Badge tone="purple">{eyebrow}</Badge>
         <div>
-          <h1 className="text-3xl font-semibold lg:text-4xl">{title}</h1>
-          <p className="mt-2 max-w-2xl text-slate-600">{description}</p>
+          <h1 className="premium-heading text-2xl font-semibold lg:text-[32px]">{title}</h1>
+          <p className="mt-1 max-w-2xl text-sm text-slate-600">{description}</p>
         </div>
       </div>
       {actionLabel ? <Button>{actionLabel}</Button> : null}

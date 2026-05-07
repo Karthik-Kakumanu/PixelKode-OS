@@ -1,37 +1,30 @@
 "use client";
 
-import { Bell, Menu, Search } from "lucide-react";
+import { Menu } from "lucide-react";
+import { usePathname } from "next/navigation";
 
 import { logoutAction } from "@/app/(app)/actions";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 
 export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
+  const pathname = usePathname();
+  const section = pathname.split("/")[1] || "dashboard";
+
   return (
-    <div className="glass-panel sticky top-4 z-30 flex flex-col gap-3 rounded-[28px] p-4 lg:flex-row lg:items-center lg:justify-between">
-      <div className="flex flex-1 items-center gap-3">
+    <div className="glass-panel sticky top-3 z-30 flex items-center justify-between rounded-[24px] border-white/80 px-4 py-3">
+      <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={onMenuClick} className="md:hidden" aria-label="Open menu">
           <Menu className="h-4 w-4" />
         </Button>
-        <div className="relative w-full max-w-md">
-          <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-          <Input className="pl-11" placeholder="Search projects, leads, revenue entries..." />
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-slate-400">Workspace</p>
+          <p className="text-base font-semibold capitalize text-slate-900">{section}</p>
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon">
-          <Bell className="h-4 w-4" />
-        </Button>
-        <div className="flex items-center gap-3 rounded-2xl border border-violet-100 bg-white/60 px-3 py-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-gradient font-semibold text-slate-900">PK</div>
-          <div>
-            <p className="text-sm font-medium text-slate-900">Pixelkode</p>
-            <p className="text-xs text-slate-500">Owner Login</p>
-          </div>
-        </div>
+      <div className="flex items-center">
         <form action={logoutAction}>
-          <Button variant="outline">Logout</Button>
+          <Button variant="outline" size="sm">Logout</Button>
         </form>
       </div>
     </div>

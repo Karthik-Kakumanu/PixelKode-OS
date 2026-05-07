@@ -2,11 +2,14 @@
 
 import { ArrowUpRight, CircleDollarSign, FolderKanban, Megaphone, Sparkles } from "lucide-react";
 
-import { PageHeader } from "@/components/app/page-header";
 import {
   ContentLeadsChart,
+  OpsPulseChart,
+  ProjectProgressChart,
   RevenueLineChart,
+  SectorRevenueChart,
   ServiceBarChart,
+  ServiceDemandMixChart,
   ServiceDeliveryChart,
   StatusPieChart,
   TeamCapacityChart
@@ -26,16 +29,17 @@ import {
   buildServiceDemandData,
   buildTeamCapacityData
 } from "@/lib/analytics";
+import { getStatusClasses } from "@/lib/sheet-ui";
 import { useBusinessStore } from "@/lib/store";
 import { cn, formatCurrency } from "@/lib/utils";
 
-const progressColors = ["#D98BB6", "#A59AF7", "#7DCFC0", "#F4B183", "#8CB7FF"];
+const progressColors = ["#ff5fa2", "#7c6cff", "#1cc8c0", "#ff9b54", "#3b82f6"];
 const heroIcons = [FolderKanban, CircleDollarSign, ArrowUpRight, Megaphone];
 const heroAccents = [
-  "from-violet-200/95 to-violet-50/80",
-  "from-emerald-200/95 to-emerald-50/80",
-  "from-rose-200/95 to-rose-50/80",
-  "from-sky-200/95 to-sky-50/80"
+  "from-fuchsia-200 via-rose-100 to-white",
+  "from-emerald-200 via-lime-100 to-white",
+  "from-orange-200 via-amber-100 to-white",
+  "from-sky-200 via-cyan-100 to-white"
 ];
 
 export function DashboardView() {
@@ -86,76 +90,74 @@ export function DashboardView() {
     : formatCurrency(0);
   const pipelineValue = formatCurrency(projects.reduce((sum, row) => sum + Number(row.pendingAmount ?? 0), 0));
 
-  return (
-    <div className="space-y-6">
-      <PageHeader
-        eyebrow="Dashboard"
-        title="Your business at a glance"
-        description="This dashboard stays tied to your live Projects, Leads, Revenue, Team, Content, and Services data."
-      />
+  const projectProgressData = projects.map((project) => ({
+    name: String(project.projectName ?? "Project"),
+    progress: Number(project.completionPercent ?? 0),
+    pending: Math.round(Number(project.pendingAmount ?? 0) / 1000)
+  }));
+  const opsPulseData = [
+    { name: "Active Projects", value: summary.activeProjects },
+    { name: "Follow Ups", value: summary.followUps },
+    { name: "Delivered", value: summary.servicesDelivered },
+    { name: "Scheduled", value: summary.scheduledContent },
+    { name: "Converted", value: summary.converted }
+  ];
 
+  return (
+    <div className="space-y-4">
       {!isLoaded ? <p className="text-sm text-slate-400">Loading Railway data...</p> : null}
       {error ? <p className="text-sm text-amber-300">{error}</p> : null}
 
-      <div className="grid gap-4 xl:grid-cols-[1.55fr_0.95fr]">
-        <div className="grid gap-4 md:grid-cols-2">
-          {heroMetrics.map((metric, index) => {
-            const Icon = heroIcons[index];
+      <Card className="overflow-hidden rounded-[28px] border-white/80 bg-[linear-gradient(135deg,rgba(255,255,255,0.96),rgba(249,250,255,0.92))] p-0 shadow-[0_24px_60px_rgba(90,76,146,0.08)]">
+        <div className="relative overflow-hidden px-5 py-4 md:px-6 md:py-5">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(244,114,182,0.12),transparent_32%),radial-gradient(circle_at_top_right,rgba(56,189,248,0.12),transparent_28%),linear-gradient(90deg,rgba(255,255,255,0.86),rgba(255,255,255,0.94))]" />
+          <div className="relative grid gap-4 xl:grid-cols-[1.2fr_0.95fr]">
+            <div className="space-y-4">
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/75 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500 shadow-sm">
+                <Sparkles className="h-3.5 w-3.5 text-fuchsia-500" />
+                Executive Overview
+              </div>
+              <div className="max-w-xl">
+                <h1 className="premium-heading text-3xl font-semibold tracking-tight text-slate-950 md:text-[38px]">Business Dashboard</h1>
+                <p className="mt-2 max-w-lg text-sm leading-7 text-slate-600 md:text-base">
+                  Collections, delivery pace, project movement, and demand signals in one clean operating view.
+                </p>
+              </div>
+            </div>
+            <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+              {heroMetrics.map((metric, index) => {
+                const Icon = heroIcons[index];
 
-            return (
-              <Card key={metric.label} className="overflow-hidden p-0">
-                <div className={cn("h-1.5 bg-gradient-to-r", heroAccents[index])} />
-                <div className="p-6">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-500">{metric.label}</p>
-                      <h3 className="mt-4 text-4xl font-semibold tracking-tight text-slate-900">{metric.value}</h3>
-                      <p className="mt-3 text-sm text-slate-500">{metric.helper}</p>
-                    </div>
-                    <div className="rounded-2xl border border-violet-100 bg-white/70 p-3">
-                      <Icon className="h-5 w-5 text-slate-700" />
+                return (
+                  <div key={metric.label} className="rounded-[18px] border border-white/80 bg-white/74 p-3 shadow-sm backdrop-blur">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1 pr-2">
+                        <p className="whitespace-nowrap text-[10px] font-medium uppercase tracking-[0.08em] text-slate-500">{metric.label}</p>
+                        <h3 className="mt-2 whitespace-nowrap text-[22px] font-semibold leading-none tracking-tight text-slate-950 xl:text-[24px]">
+                          {metric.value}
+                        </h3>
+                      </div>
+                      <div className={cn("shrink-0 rounded-2xl p-2", "bg-gradient-to-br " + heroAccents[index])}>
+                        <Icon className="h-3.5 w-3.5 text-slate-800" />
+                      </div>
                     </div>
                   </div>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-
-        <Card className="overflow-hidden p-0">
-          <div className="border-b border-violet-100/80 px-6 py-5">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-violet-500" />
-              <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-500">Business Intelligence</p>
+                );
+              })}
             </div>
-            <h3 className="mt-3 text-2xl font-semibold text-slate-900">Live ratios and focus areas</h3>
           </div>
-          <div className="grid gap-3 p-5 sm:grid-cols-2">
-            <InsightTile label="Avg. project value" value={avgProjectValue} helper="Average project size" />
-            <InsightTile label="Pipeline value" value={pipelineValue} helper="Remaining receivable amount" />
-            <InsightTile
-              label="Top service"
-              value={String(topService?.serviceName ?? "No live service")}
-              helper={`${Number(topService?.projectsDone ?? 0)} delivered`}
-            />
-            <InsightTile
-              label="Best content"
-              value={String(topContent?.contentTitle ?? "No content yet")}
-              helper={`${Number(topContent?.leadsGenerated ?? 0)} leads generated`}
-            />
-          </div>
-        </Card>
+        </div>
+      </Card>
+
+      <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr_0.85fr]">
+        <RevenueLineChart data={monthlyRevenue.length > 0 ? monthlyRevenue : [{ month: "No Data", revenue: 0, target: 0 }]} />
+        <StatusPieChart data={projectStatus.length > 0 ? projectStatus : [{ name: "No Data", value: 1 }]} />
+        <MoneySplitCard items={revenueTypes} />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <RevenueLineChart data={monthlyRevenue.length > 0 ? monthlyRevenue : [{ month: "No Data", revenue: 0, target: 0 }]} />
         <ServiceBarChart data={revenueByCategory.length > 0 ? revenueByCategory : [{ name: "No Data", value: 0 }]} />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr_0.95fr]">
-        <StatusPieChart data={projectStatus.length > 0 ? projectStatus : [{ name: "No Data", value: 1 }]} />
         <LeadPipelineBoard items={leadStatus} leads={followUpLeads} />
-        <MoneySplitCard items={revenueTypes} />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-3">
@@ -164,136 +166,112 @@ export function DashboardView() {
         <ContentLeadsChart data={contentPerformance.length > 0 ? contentPerformance : [{ name: "No Content", leads: 0 }]} />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-        <Card className="overflow-hidden p-0">
-          <div className="border-b border-violet-100/80 px-6 py-5">
-            <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-500">Active Projects Tracker</p>
-            <h3 className="mt-3 text-2xl font-semibold text-slate-900">Projects that still need movement</h3>
-          </div>
-          <div className="px-6 pb-4 pt-2">
-            <div className="grid grid-cols-[1.4fr_0.8fr_0.7fr_0.8fr] gap-3 border-b border-violet-100/80 py-3 text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
-              <span>Client</span>
-              <span>Status</span>
-              <span>Payment</span>
-              <span>Progress</span>
-            </div>
-            <div className="space-y-1">
-              {activeProjects.map((project) => (
-                <div
-                  key={String(project.id)}
-                  className="grid grid-cols-[1.4fr_0.8fr_0.7fr_0.8fr] gap-3 border-b border-violet-100/60 py-4 last:border-b-0"
-                >
-                  <div>
-                    <p className="text-base font-semibold text-slate-900">{String(project.projectName ?? "Untitled project")}</p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      {String(project.category ?? "General")} · {String(project.clientName ?? "No client")}
-                    </p>
-                  </div>
-                  <ProjectPill value={String(project.projectStatus ?? "Unknown")} />
-                  <ProjectPill value={String(project.paymentStatus ?? "Unknown")} />
-                  <div className="flex items-center gap-3">
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-violet-100">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-violet-300 via-rose-300 to-sky-300"
-                        style={{ width: `${Math.max(0, Math.min(100, Number(project.completionPercent ?? 0)))}%` }}
-                      />
-                    </div>
-                    <span className="min-w-[42px] text-sm font-medium text-slate-600">
-                      {Number(project.completionPercent ?? 0)}%
-                    </span>
-                  </div>
-                </div>
-              ))}
-              {activeProjects.length === 0 ? (
-                <div className="py-8 text-sm text-slate-500">All projects are marked completed right now.</div>
-              ) : null}
-            </div>
-          </div>
-        </Card>
+      <div className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
+        <div className="grid gap-4">
+          <ProjectProgressChart
+            data={
+              projectProgressData.length > 0
+                ? projectProgressData
+                : [{ name: "No Project", progress: 0, pending: 0 }]
+            }
+          />
+          <ProjectFocusBoard
+            activeProjects={activeProjects}
+            topService={topService}
+            topContent={topContent}
+          />
+        </div>
 
-        <Card className="overflow-hidden p-0">
-          <div className="border-b border-violet-100/80 px-6 py-5">
-            <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-500">Operational Snapshot</p>
-            <h3 className="mt-3 text-2xl font-semibold text-slate-900">What needs your attention this week</h3>
-          </div>
-          <div className="grid gap-3 p-5">
-            <SnapshotTile label="Project pipeline" value={`${summary.activeProjects} active`} helper={`${summary.completedProjects} completed`} />
-            <SnapshotTile label="Lead actions" value={`${summary.followUps} follow-ups`} helper={`${summary.proposals} proposals · ${summary.converted} converted`} />
-            <SnapshotTile label="Services delivered" value={`${summary.servicesDelivered}`} helper="Lifetime delivery count" />
-            <SnapshotTile label="Content motion" value={`${summary.scheduledContent} scheduled`} helper={`${summary.totalContentLeads} leads from content`} />
-            <SnapshotTile label="Net profit" value={formatCurrency(summary.profit)} helper="Income minus expenses and personal use" />
-          </div>
-        </Card>
+        <div className="grid gap-4">
+          <Card className="overflow-hidden rounded-[22px] border-white/80 p-0">
+            <div className="border-b border-white/80 bg-white/80 px-5 py-4">
+              <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">KPI Snapshot</p>
+              <h3 className="mt-2 text-xl font-semibold text-slate-900">Weekly focus</h3>
+            </div>
+            <div className="grid gap-3 p-4">
+              <SnapshotTile label="Avg. project value" value={avgProjectValue} helper="Average project size" />
+              <SnapshotTile label="Pipeline value" value={pipelineValue} helper="Remaining receivable amount" />
+              <SnapshotTile label="Lead actions" value={`${summary.followUps} follow-ups`} helper={`${summary.proposals} proposals - ${summary.converted} converted`} />
+              <SnapshotTile label="Net profit" value={formatCurrency(summary.profit)} helper="Income minus expenses and personal use" />
+            </div>
+          </Card>
+
+          <SectorRevenueChart
+            data={revenueBySector.length > 0 ? revenueBySector : [{ name: "No Sector", value: 0 }]}
+          />
+        </div>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <Card className="overflow-hidden p-0">
-          <div className="border-b border-violet-100/80 px-6 py-5">
-            <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-500">Service Demand Board</p>
-            <h3 className="mt-3 text-2xl font-semibold text-slate-900">Which offers are pulling the most interest</h3>
-          </div>
-          <div className="space-y-3 p-5">
-            {serviceDemand.map((item) => (
-              <div key={item.name} className="rounded-2xl border border-violet-100 bg-white/55 p-4">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="truncate text-base font-semibold text-slate-900">{item.name}</p>
-                    <p className="mt-1 text-sm text-slate-500">{item.leads} monthly leads flowing into this offer</p>
-                  </div>
-                  <div className="rounded-2xl border border-violet-100 bg-white/70 px-4 py-3 text-right">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Done</p>
-                    <p className="text-lg font-semibold text-slate-900">{item.projects}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-            {serviceDemand.length === 0 ? (
-              <div className="rounded-2xl border border-violet-100 bg-white/55 p-4 text-sm text-slate-500">
-                Add services to compare demand and fulfillment.
-              </div>
-            ) : null}
-          </div>
-        </Card>
+        <ServiceDemandMixChart
+          data={serviceDemand.length > 0 ? serviceDemand : [{ name: "No Service", leads: 0, projects: 0 }]}
+        />
 
-        <Card className="overflow-hidden p-0">
-          <div className="border-b border-violet-100/80 px-6 py-5">
-            <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-500">Revenue by Sector</p>
-            <h3 className="mt-3 text-2xl font-semibold text-slate-900">Where collected money is coming from</h3>
-          </div>
-          <div className="grid gap-3 p-5 sm:grid-cols-2">
-            {revenueBySector.map((item) => (
-              <div key={item.name} className="rounded-2xl border border-violet-100 bg-white/50 p-4">
-                <p className="text-sm text-slate-400">{item.name}</p>
-                <p className="mt-2 text-2xl font-semibold text-slate-900">{formatCurrency(item.value)}</p>
-              </div>
-            ))}
-            {revenueBySector.length === 0 ? (
-              <div className="rounded-2xl border border-violet-100 bg-white/55 p-4 text-sm text-slate-500">
-                Add project rows and received amounts to see sector-level analysis.
-              </div>
-            ) : null}
-          </div>
-        </Card>
+        <OpsPulseChart data={opsPulseData} />
       </div>
     </div>
   );
 }
 
-function InsightTile({
-  label,
-  value,
-  helper
+function ProjectFocusBoard({
+  activeProjects,
+  topService,
+  topContent
 }: {
-  label: string;
-  value: string;
-  helper: string;
+  activeProjects: Record<string, unknown>[];
+  topService?: Record<string, unknown>;
+  topContent?: Record<string, unknown>;
 }) {
   return (
-    <div className="rounded-[24px] border border-violet-100 bg-white/55 p-5">
-      <p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">{label}</p>
-      <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-900">{value}</p>
-      <p className="mt-2 text-sm text-slate-500">{helper}</p>
-    </div>
+    <Card className="overflow-hidden rounded-[24px] border-white/80 p-0">
+      <div className="border-b border-white/80 bg-gradient-to-r from-white via-fuchsia-50/70 to-sky-50/70 px-5 py-4">
+        <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">Project Focus</p>
+        <h3 className="mt-2 text-xl font-semibold text-slate-900">What needs attention next</h3>
+      </div>
+      <div className="grid gap-4 p-4 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="rounded-[20px] border border-white/80 bg-white/65 p-4">
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400">Active Queue</p>
+          <div className="mt-4 space-y-3">
+            {activeProjects.length > 0 ? (
+              activeProjects.map((project, index) => (
+                <div key={`${String(project.id ?? "project")}-${index}`} className="rounded-2xl border border-white/80 bg-white/80 px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-900">{String(project.projectName ?? "Project")}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {String(project.clientName ?? "Unknown client")} • {String(project.projectStatus ?? "In Progress")}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold text-slate-900">{Number(project.completionPercent ?? 0)}%</p>
+                      <p className="mt-1 text-xs text-slate-500">{formatCurrency(Number(project.pendingAmount ?? 0))} pending</p>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-slate-500">No active projects right now.</p>
+            )}
+          </div>
+        </div>
+        <div className="grid gap-4">
+          <div className="rounded-[20px] border border-white/80 bg-white/65 p-4">
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400">Top Service</p>
+            <p className="mt-3 text-xl font-semibold text-slate-900">{String(topService?.serviceName ?? "No service data")}</p>
+            <p className="mt-2 text-sm text-slate-500">
+              {topService ? `${Number(topService.projectsDone ?? 0)} projects delivered • ${Number(topService.monthlyLeads ?? 0)} monthly leads` : "Add service rows to track demand and delivery."}
+            </p>
+          </div>
+          <div className="rounded-[20px] border border-white/80 bg-white/65 p-4">
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400">Top Content</p>
+            <p className="mt-3 text-xl font-semibold text-slate-900">{String(topContent?.contentTitle ?? "No content data")}</p>
+            <p className="mt-2 text-sm text-slate-500">
+              {topContent ? `${Number(topContent.leadsGenerated ?? 0)} leads generated • ${String(topContent.platform ?? "Platform")}` : "Add content rows to see which posts are driving leads."}
+            </p>
+          </div>
+        </div>
+      </div>
+    </Card>
   );
 }
 
@@ -307,20 +285,10 @@ function SnapshotTile({
   helper: string;
 }) {
   return (
-    <div className="rounded-[22px] border border-violet-100 bg-white/55 p-4">
-      <p className="text-sm text-slate-400">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-slate-900">{value}</p>
-      <p className="mt-1 text-sm text-slate-500">{helper}</p>
-    </div>
-  );
-}
-
-function ProjectPill({ value }: { value: string }) {
-  return (
-    <div className="pt-1">
-      <span className="inline-flex rounded-full border border-violet-100 bg-white/80 px-3 py-1.5 text-sm font-medium text-slate-700">
-        {value}
-      </span>
+    <div className="rounded-[18px] border border-white/80 bg-white/65 p-4">
+      <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">{label}</p>
+      <p className="mt-2 text-xl font-semibold text-slate-900">{value}</p>
+      <p className="mt-1 text-xs text-slate-500">{helper}</p>
     </div>
   );
 }
@@ -335,12 +303,12 @@ function LeadPipelineBoard({
   const total = items.reduce((sum, item) => sum + item.value, 0);
 
   return (
-    <Card className="overflow-hidden p-0">
-      <div className="border-b border-violet-100/80 px-6 py-5">
-        <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-500">Lead Pipeline Funnel</p>
-        <h3 className="mt-3 text-2xl font-semibold text-slate-900">{total} live leads</h3>
+    <Card className="overflow-hidden rounded-[22px] border-white/80 p-0">
+      <div className="border-b border-white/80 bg-white/80 px-5 py-4">
+        <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">Lead Pipeline Funnel</p>
+        <h3 className="mt-2 text-xl font-semibold text-slate-900">{total} live leads</h3>
       </div>
-      <div className="space-y-4 p-5">
+      <div className="space-y-4 p-4">
         {items.map((item, index) => {
           const percent = total > 0 ? Math.round((item.value / total) * 100) : 0;
 
@@ -348,7 +316,7 @@ function LeadPipelineBoard({
             <div key={item.stage} className="space-y-2">
               <div className="flex items-center justify-between gap-3 text-sm">
                 <span className="font-medium text-slate-700">{item.stage}</span>
-                <span className="text-slate-500">{item.value} leads · {percent}%</span>
+                <span className="text-slate-500">{item.value} leads - {percent}%</span>
               </div>
               <div className="h-3 overflow-hidden rounded-full bg-violet-100">
                 <div
@@ -362,18 +330,22 @@ function LeadPipelineBoard({
             </div>
           );
         })}
-        <div className="rounded-[22px] border border-violet-100 bg-white/55 p-4">
+        <div className="rounded-[18px] border border-white/80 bg-white/65 p-4">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Immediate follow-ups</p>
           <div className="mt-3 space-y-3">
             {leads.length > 0 ? (
-              leads.map((lead, index) => (
-                <div key={`${String(lead.id ?? "lead")}-${index}`} className="flex items-center justify-between gap-3 text-sm">
-                  <span className="truncate font-medium text-slate-700">{String(lead.businessName ?? "Unknown business")}</span>
-                  <span className="rounded-full border border-violet-100 bg-white/80 px-3 py-1 text-slate-600">
-                    {String(lead.leadStatus ?? lead.callStatus ?? "Pending")}
-                  </span>
-                </div>
-              ))
+              leads.map((lead, index) => {
+                const statusValue = String(lead.leadStatus ?? lead.callStatus ?? "Pending");
+
+                return (
+                  <div key={`${String(lead.id ?? "lead")}-${index}`} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="truncate font-medium text-slate-700">{String(lead.businessName ?? "Unknown business")}</span>
+                    <span className={cn("rounded-full border px-3 py-1 text-xs text-slate-600", getStatusClasses(statusValue))}>
+                      {statusValue}
+                    </span>
+                  </div>
+                );
+              })
             ) : (
               <p className="text-sm text-slate-500">No live follow-up leads right now.</p>
             )}
@@ -385,17 +357,65 @@ function LeadPipelineBoard({
 }
 
 function MoneySplitCard({ items }: { items: { name: string; value: number }[] }) {
+  const income = items.find((item) => item.name === "Income")?.value ?? 0;
+  const expense = items
+    .filter((item) => ["Expense", "Payroll", "Personal Use"].includes(item.name))
+    .reduce((sum, item) => sum + item.value, 0);
+  const profit = income - expense;
+  const totalFlow = Math.max(income + expense, 1);
+  const profitTone =
+    profit >= 0
+      ? "from-emerald-400 via-lime-300 to-cyan-300 text-emerald-950"
+      : "from-rose-400 via-orange-300 to-amber-300 text-rose-950";
+
   return (
-    <Card className="overflow-hidden p-0">
-      <div className="border-b border-violet-100/80 px-6 py-5">
-        <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-500">Payment Status Split</p>
-        <h3 className="mt-3 text-2xl font-semibold text-slate-900">Money split from live revenue entries</h3>
+    <Card className="overflow-hidden rounded-[22px] border-white/80 p-0">
+      <div className="border-b border-white/80 bg-white/80 px-5 py-4">
+        <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">Revenue Mix</p>
+        <h3 className="mt-2 text-xl font-semibold text-slate-900">Income and spend breakdown</h3>
       </div>
-      <div className="space-y-3 p-5">
-        {items.map((item) => (
-          <div key={item.name} className="rounded-2xl border border-violet-100 bg-white/55 p-4">
+      <div className="space-y-3 p-4">
+        <div className={`rounded-[24px] bg-gradient-to-br ${profitTone} p-[1px] shadow-[0_20px_50px_rgba(16,24,40,0.12)]`}>
+          <div className="rounded-[23px] bg-white/80 px-5 py-4 backdrop-blur">
+            <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-slate-500">Net Profit</p>
+            <div className="mt-2 flex items-end justify-between gap-3">
+              <div>
+                <p className="text-4xl font-semibold tracking-tight text-slate-900">{formatCurrency(profit)}</p>
+                <p className="mt-1 text-xs text-slate-600">
+                  {profit >= 0 ? "Income is ahead of total spend" : "Spend is higher than income right now"}
+                </p>
+              </div>
+              <div className="min-w-[108px] rounded-2xl bg-white/70 px-3 py-2 text-right">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Margin</p>
+                <p className="mt-1 text-lg font-semibold text-slate-900">
+                  {income > 0 ? `${Math.round((profit / income) * 100)}%` : "0%"}
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 h-3 overflow-hidden rounded-full bg-white/70">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-cyan-300 to-sky-400"
+                style={{ width: `${Math.max(8, Math.min(100, (income / totalFlow) * 100))}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {items.map((item, index) => (
+          <div key={item.name} className="rounded-2xl border border-white/80 bg-white/65 p-4">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-medium text-slate-700">{item.name}</p>
+              <div className="flex items-center gap-3">
+                <span
+                  className="h-3 w-3 rounded-full"
+                  style={{ backgroundColor: progressColors[index % progressColors.length] }}
+                />
+                <div>
+                  <p className="text-sm font-medium text-slate-700">{item.name}</p>
+                  <p className="text-[11px] text-slate-500">
+                    {Math.round((item.value / totalFlow) * 100)}% of tracked finance flow
+                  </p>
+                </div>
+              </div>
               <p className="text-lg font-semibold text-slate-900">{formatCurrency(item.value)}</p>
             </div>
           </div>

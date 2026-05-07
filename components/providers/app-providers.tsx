@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 
+import { SmartAssistant } from "@/components/business/smart-assistant";
 import { useBusinessStore } from "@/lib/store";
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
@@ -14,5 +15,10 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     void loadSheets();
   }, [loadSheets, pathname]);
 
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      {pathname === "/login" ? null : <SmartAssistant />}
+    </>
+  );
 }

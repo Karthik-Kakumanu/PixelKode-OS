@@ -16,13 +16,13 @@ export function PageShell({
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-[1800px] gap-4 p-3 sm:p-4">
+    <div className="mx-auto flex min-h-screen max-w-[1820px] gap-3 p-3 sm:p-3 lg:p-4">
       <Sidebar mobileOpen={mobileSidebarOpen} onClose={() => setMobileSidebarOpen(false)} />
-      <div className="flex min-w-0 flex-1 flex-col gap-4">
+      <div className="flex min-w-0 flex-1 flex-col gap-3">
         <Topbar onMenuClick={() => setMobileSidebarOpen(true)} />
         <MobileNav />
-        <div className="flex min-h-0 flex-1 gap-4">
-          <main className="min-w-0 flex-1">{children}</main>
+        <div className="flex min-h-0 flex-1 gap-3">
+          <main className="min-w-0 flex-1 pb-24">{children}</main>
           {rightRail ? <aside className="hidden w-[320px] shrink-0 xl:block">{rightRail}</aside> : null}
         </div>
       </div>

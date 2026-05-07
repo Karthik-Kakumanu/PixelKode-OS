@@ -12,15 +12,25 @@ interface BusinessStore {
   error: string;
   loadSheets: () => Promise<void>;
   addRow: (sheet: SheetKey) => void;
+  addRowWithValues: (sheet: SheetKey, values: Record<string, CellValue>) => void;
   deleteRow: (sheet: SheetKey, rowIndex: number) => void;
   updateCell: (sheet: SheetKey, rowIndex: number, columnId: string, value: CellValue) => void;
   addColumn: (sheet: SheetKey, column: SheetColumn) => void;
   deleteColumn: (sheet: SheetKey, columnId: string) => void;
+  addColumnOption: (sheet: SheetKey, columnId: string, option: string) => void;
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let queuedSheets: Record<SheetKey, SheetData> | null = null;
 let activeSaveRequest = 0;
+
+const PROJECT_REVENUE_SYNC_SOURCE = "project_income_sync";
+
+function normalizeSyncText(value: unknown) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
 
 function makeEmptyRow(columns: SheetColumn[], prefix: string, length: number): SheetRow {
   const nextRow: SheetRow = { id: `${prefix}-${length + 1}` };
@@ -31,6 +41,97 @@ function makeEmptyRow(columns: SheetColumn[], prefix: string, length: number): S
   });
 
   return nextRow;
+}
+
+function clampNumber(value: unknown, min = 0, max = Number.POSITIVE_INFINITY) {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed)) {
+    return min;
+  }
+
+  return Math.min(Math.max(parsed, min), max);
+}
+
+function syncProjectDerivedFields(rows: SheetRow[]) {
+  return rows.map<SheetRow>((row) => {
+    const projectValue = clampNumber(row.projectValue);
+    const amountReceived = clampNumber(row.amountReceived, 0, projectValue);
+    const completionPercent = clampNumber(row.completionPercent, 0, 100);
+    const pendingAmount = Math.max(projectValue - amountReceived, 0);
+
+    return {
+      ...row,
+      projectValue,
+      amountReceived,
+      completionPercent,
+      pendingAmount
+    };
+  });
+}
+
+function syncProjectSheet(sheets: Record<SheetKey, SheetData>) {
+  const projectsSheet = sheets.projects;
+  if (!projectsSheet) {
+    return sheets;
+  }
+
+  return {
+    ...sheets,
+    projects: {
+      ...projectsSheet,
+      rows: syncProjectDerivedFields(projectsSheet.rows)
+    }
+  };
+}
+
+function syncRevenueFromProjects(sheets: Record<SheetKey, SheetData>) {
+  const syncedSheets = syncProjectSheet(sheets);
+  const projectsSheet = syncedSheets.projects;
+  const revenueSheet = sheets.revenue;
+
+  if (!projectsSheet || !revenueSheet) {
+    return syncedSheets;
+  }
+
+  const manualRevenueRows = revenueSheet.rows.filter((row) => String(row.syncSource ?? "") !== PROJECT_REVENUE_SYNC_SOURCE);
+  const totalAmountReceived = projectsSheet.rows.reduce((sum, project) => sum + Number(project.amountReceived ?? 0), 0);
+  const rows = manualRevenueRows.map((row) => {
+    const sourceName = normalizeSyncText(row.sourceName);
+    const category = normalizeSyncText(row.category);
+    const remarks = normalizeSyncText(row.remarks);
+    const entryType = normalizeSyncText(row.entryType);
+    const shouldSyncTotalRow =
+      (entryType === "income" &&
+        [
+          "tilldate",
+          "receivedtilldate",
+          "projectsreceivedtilldate",
+          "earnedtilldate",
+          "totalreceived",
+          "totaltilldate"
+        ].includes(sourceName)) ||
+      category === "projectreceipts" ||
+      remarks.includes("projectsreceivedtilldate") ||
+      remarks.includes("totalreceived");
+
+    if (!shouldSyncTotalRow) {
+      return row;
+    }
+
+    return {
+      ...row,
+      amount: totalAmountReceived
+    };
+  });
+
+  return {
+    ...syncedSheets,
+    revenue: {
+      ...revenueSheet,
+      rows
+    }
+  };
 }
 
 async function persistSheets(sheets: Record<SheetKey, SheetData>, set: (partial: Partial<BusinessStore>) => void) {
@@ -99,9 +200,10 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       }
 
       const payload = (await response.json()) as { sheets?: Record<SheetKey, SheetData> };
+      const syncedSheets = syncRevenueFromProjects(payload.sheets ?? createDefaultSheets());
 
       set({
-        sheets: payload.sheets ?? createDefaultSheets(),
+        sheets: syncedSheets,
         isLoaded: true,
         error: ""
       });
@@ -116,13 +218,32 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
   },
   addRow: (sheet) => {
     const current = get().sheets[sheet];
-    const sheets = {
+    const nextSheets = {
       ...get().sheets,
       [sheet]: {
         ...current,
         rows: [...current.rows, makeEmptyRow(current.columns, sheet, current.rows.length)]
       }
     };
+    const sheets = syncRevenueFromProjects(nextSheets);
+
+    set({ sheets });
+    queuePersist(sheets, set);
+  },
+  addRowWithValues: (sheet, values) => {
+    const current = get().sheets[sheet];
+    const nextRow = {
+      ...makeEmptyRow(current.columns, sheet, current.rows.length),
+      ...values
+    };
+    const nextSheets = {
+      ...get().sheets,
+      [sheet]: {
+        ...current,
+        rows: [...current.rows, nextRow]
+      }
+    };
+    const sheets = syncRevenueFromProjects(nextSheets);
 
     set({ sheets });
     queuePersist(sheets, set);
@@ -130,13 +251,14 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
   deleteRow: (sheet, rowIndex) => {
     const current = get().sheets[sheet];
     const rows = current.rows.filter((_, index) => index !== rowIndex);
-    const sheets = {
+    const nextSheets = {
       ...get().sheets,
       [sheet]: {
         ...current,
         rows
       }
     };
+    const sheets = syncRevenueFromProjects(nextSheets);
 
     set({ sheets });
     queuePersist(sheets, set);
@@ -144,13 +266,14 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
   updateCell: (sheet, rowIndex, columnId, value) => {
     const current = get().sheets[sheet];
     const rows = current.rows.map((row, index) => (index === rowIndex ? { ...row, [columnId]: value } : row));
-    const sheets = {
+    const nextSheets = {
       ...get().sheets,
       [sheet]: {
         ...current,
         rows
       }
     };
+    const sheets = syncRevenueFromProjects(nextSheets);
 
     set({ sheets });
     queuePersist(sheets, set);
@@ -161,13 +284,14 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       ...row,
       [column.id]: column.type === "number" ? 0 : ""
     }));
-    const sheets = {
+    const nextSheets = {
       ...get().sheets,
       [sheet]: {
         columns: [...current.columns, column],
         rows
       }
     };
+    const sheets = syncRevenueFromProjects(nextSheets);
 
     set({ sheets });
     queuePersist(sheets, set);
@@ -186,13 +310,54 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       delete nextRow[columnId];
       return nextRow;
     });
-    const sheets = {
+    const nextSheets = {
       ...get().sheets,
       [sheet]: {
         columns,
         rows
       }
     };
+    const sheets = syncRevenueFromProjects(nextSheets);
+
+    set({ sheets });
+    queuePersist(sheets, set);
+  },
+  addColumnOption: (sheet, columnId, option) => {
+    const normalizedOption = option.trim();
+
+    if (!normalizedOption) {
+      return;
+    }
+
+    const current = get().sheets[sheet];
+    const columns = current.columns.map((column) => {
+      if (column.id !== columnId) {
+        return column;
+      }
+
+      const existingOptions = column.options ?? [];
+      const hasOption = existingOptions.some(
+        (existingOption) => existingOption.toLowerCase() === normalizedOption.toLowerCase()
+      );
+
+      if (hasOption) {
+        return column;
+      }
+
+      return {
+        ...column,
+        options: [...existingOptions, normalizedOption]
+      };
+    });
+
+    const nextSheets = {
+      ...get().sheets,
+      [sheet]: {
+        ...current,
+        columns
+      }
+    };
+    const sheets = syncRevenueFromProjects(nextSheets);
 
     set({ sheets });
     queuePersist(sheets, set);
