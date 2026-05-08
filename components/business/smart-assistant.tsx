@@ -24,7 +24,7 @@ import { useBusinessStore } from "@/lib/store";
 import type { CellValue, ColumnType, OperationAlert, SheetColumn, SheetData, SheetKey } from "@/lib/types";
 import { cn, formatCurrency } from "@/lib/utils";
 
-const sheetKeys: SheetKey[] = ["projects", "leads", "revenue", "team", "content", "services", "servers", "databases"];
+const sheetKeys: SheetKey[] = ["projects", "leads", "revenue", "team", "content", "services", "shopping", "timetable", "servers", "databases"];
 
 const labelAliases: Partial<Record<SheetKey, Partial<Record<string, string[]>>>> = {
   projects: {
@@ -77,6 +77,27 @@ const labelAliases: Partial<Record<SheetKey, Partial<Record<string, string[]>>>>
     estimatedTimeline: ["timeline", "eta"],
     notes: ["notes", "note"]
   },
+  shopping: {
+    itemName: ["item", "item name", "product", "thing"],
+    listType: ["for", "list type", "company or personal", "type"],
+    category: ["category"],
+    quantity: ["qty", "quantity"],
+    estimatedCost: ["cost", "estimated cost", "budget", "price"],
+    priority: ["priority"],
+    purchaseStatus: ["status", "purchase status"],
+    notes: ["notes", "note"]
+  },
+  timetable: {
+    slotLabel: ["period", "slot", "period name"],
+    timeRange: ["time", "time range"],
+    monday: ["monday"],
+    tuesday: ["tuesday"],
+    wednesday: ["wednesday"],
+    thursday: ["thursday"],
+    friday: ["friday"],
+    saturday: ["saturday"],
+    sunday: ["sunday"]
+  },
   servers: {
     serverName: ["server", "hostname", "server name"],
     ipAddress: ["ip", "ip address", "ipv4"],
@@ -124,12 +145,24 @@ const singularLabel: Record<SheetKey, string> = {
   team: "team member",
   content: "content item",
   services: "service",
+  shopping: "shopping item",
+  timetable: "time slot",
   servers: "server",
   databases: "database"
 };
 
 singularLabel.servers = "server";
 singularLabel.databases = "database";
+const assistantWeekdayKeys = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"] as const;
+const assistantWeekdayLabels: Record<(typeof assistantWeekdayKeys)[number], string> = {
+  sunday: "Sunday",
+  monday: "Monday",
+  tuesday: "Tuesday",
+  wednesday: "Wednesday",
+  thursday: "Thursday",
+  friday: "Friday",
+  saturday: "Saturday"
+};
 
 type AssistantIntent =
   | "count"
@@ -146,6 +179,7 @@ type AssistantIntent =
   | "delete-row"
   | "edit-row"
   | "add-row"
+  | "create-meet"
   | "greeting"
   | "smalltalk"
   | "generate-ideas";
@@ -200,7 +234,11 @@ function detectSheetKey(prompt: string, pathname: string) {
     { sheetKey: "revenue", aliases: ["revenue", "finance", "payment", "payments"] },
     { sheetKey: "team", aliases: ["team", "employee", "employees", "member", "members", "staff"] },
     { sheetKey: "content", aliases: ["content", "post", "posts"] },
-    { sheetKey: "services", aliases: ["service", "services", "offer", "offers"] }
+    { sheetKey: "services", aliases: ["service", "services", "offer", "offers"] },
+    { sheetKey: "shopping", aliases: ["shopping", "shopping list", "buy", "purchase", "purchases"] },
+    { sheetKey: "timetable", aliases: ["timetable", "schedule", "routine", "calendar block"] },
+    { sheetKey: "servers", aliases: ["server", "servers", "infra", "infrastructure", "hosting"] },
+    { sheetKey: "databases", aliases: ["database", "databases", "db", "sql", "postgres", "mysql"] }
   ];
 
   const explicitMatch = sheetKeys.find(
@@ -237,6 +275,14 @@ function detectIntent(prompt: string): AssistantIntent | "today-followups" {
   }
 
   if (/\b(summary|summarize|overview|current status|current state)\b/i.test(lowerPrompt)) {
+    return "summary";
+  }
+
+  if (
+    /\b(server status|server health|database status|database health|infra status|infra health|shopping status|shopping pending|today(?:'s)? timetable|today(?:'s)? schedule|tomorrow(?:'s)? timetable|tomorrow(?:'s)? schedule|what is my timetable|show my timetable|show schedule)\b/i.test(
+      lowerPrompt
+    )
+  ) {
     return "summary";
   }
 
@@ -305,6 +351,10 @@ function detectIntent(prompt: string): AssistantIntent | "today-followups" {
 
   if (/\b(content ideas|content idea|give me some content|suggest content|suggest (?:some )?content|content suggestions|content ideas)\b/i.test(lowerPrompt)) {
     return "generate-ideas";
+  }
+
+  if (/\b(meet|meeting|google meet)\b/i.test(lowerPrompt) && /\b(create|generate|start|schedule|instant)\b/i.test(lowerPrompt)) {
+    return "create-meet";
   }
 
   if (/\b(add column|new column|create column)\b/i.test(lowerPrompt)) {
@@ -410,7 +460,9 @@ function inferLikelyStatusColumn(sheetKey: SheetKey, columns: SheetColumn[], pro
     team: ["availability"],
     content: ["stage"],
     services: ["status"],
-    revenue: ["entryType"]
+    revenue: ["entryType"],
+    shopping: ["purchaseStatus", "priority", "listType"],
+    timetable: ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
   };
 
   for (const columnId of preferredColumns[sheetKey] ?? []) {
@@ -538,22 +590,178 @@ function findBestRowMatch(prompt: string, sheetKey: SheetKey, sheet: SheetData) 
 
 function detectColumnType(prompt: string): ColumnType {
   const lowerPrompt = prompt.toLowerCase();
+  if (lowerPrompt.includes("dropdown") || lowerPrompt.includes("select")) return "select";
   if (lowerPrompt.includes("date")) return "date";
   if (lowerPrompt.includes("number")) return "number";
   if (lowerPrompt.includes("textarea") || lowerPrompt.includes("long text")) return "textarea";
   return "text";
 }
 
+function extractMeetRequest(prompt: string) {
+  const titleMatch =
+    prompt.match(/(?:title|meeting title)\s*(?:is|:|=)?\s*["']?([^,"'\n]+)["']?/i) ??
+    prompt.match(/(?:for|called|named)\s+["']?([^,"'\n]+)["']?(?=\s+(?:with|at|on|tomorrow|today)|$)/i);
+  const emailMatch = prompt.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  const durationMatch = prompt.match(/(\d+)\s*(?:min|mins|minutes)/i);
+  const timeMatch = prompt.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
+  const dateMatch = prompt.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+  const isInstant = /\binstant\b/i.test(prompt) || /\bnow\b/i.test(prompt);
+  const isScheduled = /\b(schedule|scheduled|tomorrow|today|at)\b/i.test(prompt) && !isInstant;
+
+  let scheduledDate = "";
+  if (dateMatch?.[1]) {
+    scheduledDate = dateMatch[1];
+  } else if (/\btomorrow\b/i.test(prompt)) {
+    const next = new Date();
+    next.setDate(next.getDate() + 1);
+    scheduledDate = next.toISOString().slice(0, 10);
+  } else if (/\btoday\b/i.test(prompt)) {
+    scheduledDate = new Date().toISOString().slice(0, 10);
+  }
+
+  let scheduledTime = "";
+  if (timeMatch) {
+    let hour = Number(timeMatch[1]);
+    const minute = timeMatch[2] ? Number(timeMatch[2]) : 0;
+    const meridiem = timeMatch[3].toLowerCase();
+    if (meridiem === "pm" && hour !== 12) hour += 12;
+    if (meridiem === "am" && hour === 12) hour = 0;
+    scheduledTime = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  }
+
+  return {
+    attendeeEmail: emailMatch?.[0] ?? "",
+    durationMinutes: durationMatch?.[1] ? Number(durationMatch[1]) : 30,
+    mode: isScheduled ? "scheduled" : "instant",
+    scheduledDate,
+    scheduledTime,
+    title: titleMatch?.[1]?.trim() ?? "Google Meet Session"
+  } as const;
+}
+
+function resolveTimetableDay(prompt?: string, reference = new Date()) {
+  const lowerPrompt = (prompt ?? "").toLowerCase();
+  if (lowerPrompt.includes("tomorrow")) {
+    return assistantWeekdayKeys[(reference.getDay() + 1) % assistantWeekdayKeys.length];
+  }
+
+  for (const dayKey of assistantWeekdayKeys) {
+    if (lowerPrompt.includes(dayKey)) {
+      return dayKey;
+    }
+  }
+
+  return assistantWeekdayKeys[reference.getDay()];
+}
+
+function formatTimetablePlan(rows: Record<string, unknown>[], prompt?: string) {
+  const dayKey = resolveTimetableDay(prompt);
+  const dayLabel = assistantWeekdayLabels[dayKey];
+  const entries = rows
+    .map((row) => ({
+      slot: String(row.slotLabel ?? "Slot"),
+      timeRange: String(row.timeRange ?? ""),
+      value: String(row[dayKey] ?? "").trim()
+    }))
+    .filter((entry) => entry.value);
+
+  if (entries.length === 0) {
+    return `${dayLabel} is still open in the timetable. Nothing is filled there yet.`;
+  }
+
+  const preview = entries
+    .slice(0, 6)
+    .map((entry, index) => `${index + 1}. ${entry.slot}${entry.timeRange ? ` (${entry.timeRange})` : ""} - ${entry.value}`)
+    .join("\n");
+
+  return [`${dayLabel} has ${entries.length} planned slot${entries.length === 1 ? "" : "s"}.`, preview].join("\n");
+}
+
 function formatCountReply(sheetKey: SheetKey, sheet: SheetData) {
   const count = sheet.rows.length;
+  if (sheetKey === "shopping") {
+    const pending = sheet.rows.filter((row) => ["To Buy", "Ordered"].includes(String(row.purchaseStatus ?? ""))).length;
+    return `There are ${count} shopping items in total, with ${pending} still open to buy.`;
+  }
+
+  if (sheetKey === "servers") {
+    const healthy = sheet.rows.filter((row) => String(row.status ?? "") === "Healthy").length;
+    const alerts = sheet.rows.filter((row) => ["Warning", "Down"].includes(String(row.status ?? ""))).length;
+    return `You're tracking ${count} servers right now: ${healthy} healthy and ${alerts} needing attention.`;
+  }
+
+  if (sheetKey === "databases") {
+    const engines = new Set(sheet.rows.map((row) => String(row.engine ?? "")).filter(Boolean));
+    return `There are ${count} databases in the workspace across ${engines.size || 1} engine type${engines.size === 1 ? "" : "s"}.`;
+  }
+
+  if (sheetKey === "timetable") {
+    const filled = sheet.rows.reduce(
+      (sum, row) =>
+        sum +
+        assistantWeekdayKeys.filter((dayKey) => String(row[dayKey] ?? "").trim() !== "").length,
+      0
+    );
+    return `The timetable has ${count} time slots with ${filled} filled plan cells across the week.`;
+  }
+
   const noun = count === 1 ? singularLabel[sheetKey] : `${singularLabel[sheetKey]}s`;
   return `I found ${count} ${noun}${count === 1 ? "" : "s"} in ${sheetKey}.`;
 }
 
-function formatSummaryReply(sheetKey: SheetKey, sheet: SheetData) {
+function formatSummaryReply(sheetKey: SheetKey, sheet: SheetData, prompt?: string) {
   const count = sheet.rows.length;
   if (count === 0) {
     return `I don't see any ${sheetKey} data yet.`;
+  }
+
+  if (sheetKey === "shopping") {
+    const pending = sheet.rows.filter((row) => ["To Buy", "Ordered"].includes(String(row.purchaseStatus ?? "")));
+    const company = sheet.rows.filter((row) => String(row.listType ?? "") === "Company").length;
+    const personal = sheet.rows.filter((row) => String(row.listType ?? "") === "Personal").length;
+    const urgent = pending
+      .filter((row) => String(row.priority ?? "") === "High")
+      .slice(0, 3)
+      .map((row) => String(row.itemName ?? "Item"));
+
+    return [
+      `Shopping is tracking ${count} items in total.`,
+      `${pending.length} items are still open, split as ${company} company and ${personal} personal entries.`,
+      urgent.length > 0 ? `High-priority items waiting now: ${urgent.join(", ")}.` : "No high-priority shopping items are waiting right now."
+    ].join(" ");
+  }
+
+  if (sheetKey === "timetable") {
+    return formatTimetablePlan(sheet.rows, prompt);
+  }
+
+  if (sheetKey === "servers") {
+    const healthy = sheet.rows.filter((row) => String(row.status ?? "") === "Healthy").length;
+    const warnings = sheet.rows.filter((row) => ["Warning", "Down"].includes(String(row.status ?? "")));
+    const production = sheet.rows.filter((row) => String(row.environment ?? "") === "Production").length;
+
+    return [
+      `Infrastructure is tracking ${count} servers with ${healthy} healthy and ${warnings.length} in warning or down state.`,
+      `${production} of them are marked as production.`,
+      warnings.length > 0
+        ? `Servers needing attention: ${warnings.slice(0, 3).map((row) => String(row.serverName ?? "Server")).join(", ")}.`
+        : "No server alerts are active right now."
+    ].join(" ");
+  }
+
+  if (sheetKey === "databases") {
+    const engineCounts = new Map<string, number>();
+    sheet.rows.forEach((row) => {
+      const engine = String(row.engine ?? "Unknown");
+      engineCounts.set(engine, (engineCounts.get(engine) ?? 0) + 1);
+    });
+    const engineSummary = Array.from(engineCounts.entries())
+      .slice(0, 4)
+      .map(([engine, total]) => `${engine}: ${total}`)
+      .join(", ");
+    const hosts = new Set(sheet.rows.map((row) => String(row.host ?? "")).filter(Boolean)).size;
+
+    return `Database inventory has ${count} entries across ${hosts} host${hosts === 1 ? "" : "s"}. Engine mix: ${engineSummary || "not filled yet"}.`;
   }
 
   const primaryColumnId = getPrimaryColumn(sheetKey);
@@ -664,6 +872,9 @@ function getStartOfWeek(date = new Date()) {
 function formatAttentionReply(sheets: Record<SheetKey, SheetData>, alerts: OperationAlert[]) {
   const leads = sheets.leads?.rows ?? [];
   const projects = sheets.projects?.rows ?? [];
+  const shopping = sheets.shopping?.rows ?? [];
+  const servers = sheets.servers?.rows ?? [];
+  const timetable = sheets.timetable?.rows ?? [];
   const today = new Date();
 
   const todaysFollowUps = leads.filter((row) => {
@@ -677,6 +888,8 @@ function formatAttentionReply(sheets: Record<SheetKey, SheetData>, alerts: Opera
     .slice(0, 5);
 
   const unreadAlerts = alerts.slice(0, 5);
+  const openShopping = shopping.filter((row) => ["To Buy", "Ordered"].includes(String(row.purchaseStatus ?? ""))).slice(0, 3);
+  const infraWarnings = servers.filter((row) => ["Warning", "Down"].includes(String(row.status ?? ""))).slice(0, 3);
 
   const followUpText = todaysFollowUps.length
     ? todaysFollowUps
@@ -693,12 +906,22 @@ function formatAttentionReply(sheets: Record<SheetKey, SheetData>, alerts: Opera
   const alertText = unreadAlerts.length
     ? unreadAlerts.map((alert, index) => `${index + 1}. ${alert.title} — ${alert.message}`).join("\n")
     : "No urgent alerts right now.";
+  const shoppingText = openShopping.length
+    ? openShopping.map((item, index) => `${index + 1}. ${String(item.itemName ?? "Item")} - ${String(item.purchaseStatus ?? "Open")}`).join("\n")
+    : "No pending shopping items right now.";
+  const infraText = infraWarnings.length
+    ? infraWarnings.map((server, index) => `${index + 1}. ${String(server.serverName ?? "Server")} - ${String(server.status ?? "Alert")}`).join("\n")
+    : "Infrastructure looks stable right now.";
+  const timetableText = formatTimetablePlan(timetable, "today");
 
   return [
     "Here’s what I’d tackle first today:",
     `Follow-ups today:\n${followUpText}`,
     `Projects that need attention:\n${projectText}`,
-    `Operational alerts:\n${alertText}`
+    `Operational alerts:\n${alertText}`,
+    `Shopping queue:\n${shoppingText}`,
+    `Infrastructure watch:\n${infraText}`,
+    `Timetable focus:\n${timetableText}`
   ].join("\n\n");
 }
 
@@ -906,7 +1129,7 @@ export function SmartAssistant() {
   }, []);
 
 
-  const executePrompt = () => {
+  const executePrompt = async () => {
     const trimmed = prompt.trim();
     if (!trimmed) return;
 
@@ -926,7 +1149,7 @@ export function SmartAssistant() {
     const targetSheet = sheets[targetSheetKey];
 
     if (!targetSheet) {
-      reply("I couldn't find that section. Try projects, leads, revenue, team, content, services, servers, or databases.");
+      reply("I couldn't find that section. Try projects, leads, revenue, team, content, services, shopping, timetable, servers, or databases.");
       return;
     }
 
@@ -994,13 +1217,59 @@ export function SmartAssistant() {
       return;
     }
 
+    if (intent === "create-meet") {
+      const request = extractMeetRequest(trimmed);
+      if (request.mode === "scheduled" && (!request.scheduledDate || !request.scheduledTime)) {
+        reply("I can schedule that meet, but I still need the exact date and time. Example: schedule a meet tomorrow at 3 pm with title Client Review.");
+        return;
+      }
+
+      try {
+        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata";
+        const response = await fetch("/api/google/meet/create", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            attendeeEmail: request.attendeeEmail || undefined,
+            durationMinutes: request.durationMinutes,
+            mode: request.mode,
+            scheduledDate: request.scheduledDate || undefined,
+            scheduledTime: request.scheduledTime || undefined,
+            timezone,
+            title: request.title
+          })
+        });
+
+        const payload = (await response.json()) as {
+          error?: string;
+          meeting?: { meetLink: string; attendeeEmail: string | null; hostEmail: string | null };
+        };
+
+        if (!response.ok || !payload.meeting) {
+          throw new Error(payload.error ?? "I couldn't create the Google Meet yet.");
+        }
+
+        reply(
+          `${request.mode === "instant" ? "Instant" : "Scheduled"} meet created.\n` +
+          `Title: ${request.title}\n` +
+          `Invite: ${payload.meeting.attendeeEmail ?? "No attendee email"}\n` +
+          `Meet link: ${payload.meeting.meetLink}`
+        );
+      } catch (nextError) {
+        reply(nextError instanceof Error ? nextError.message : "I couldn't create the meet right now.");
+      }
+      return;
+    }
+
     if (intent === "count") {
       reply(formatCountReply(targetSheetKey, targetSheet));
       return;
     }
 
     if (intent === "summary") {
-      reply(formatSummaryReply(targetSheetKey, targetSheet));
+      reply(formatSummaryReply(targetSheetKey, targetSheet, trimmed));
       return;
     }
 
@@ -1183,9 +1452,16 @@ export function SmartAssistant() {
   };
 
   return (
-    <div className="fixed bottom-5 right-5 z-40 flex items-end">
+    <div className="pointer-events-none fixed inset-y-0 right-0 z-40 flex items-end justify-end">
       {open ? (
-        <Card className="flex max-h-[min(86vh,760px)] w-[min(96vw,560px)] flex-col overflow-hidden rounded-[34px] border-white/70 bg-white/95 p-0 shadow-[0_36px_90px_rgba(15,23,42,0.2)] backdrop-blur-2xl">
+        <>
+          <button
+            type="button"
+            aria-label="Close assistant overlay"
+            onClick={() => setOpen(false)}
+            className="pointer-events-auto absolute inset-0 bg-[linear-gradient(90deg,rgba(15,23,42,0.02),rgba(15,23,42,0.16))] backdrop-blur-[2px]"
+          />
+          <Card className="pointer-events-auto relative mr-4 mt-4 flex h-[calc(100vh-2rem)] w-[min(92vw,680px)] flex-col overflow-hidden rounded-[36px] border-white/70 bg-white/96 p-0 shadow-[0_40px_120px_rgba(15,23,42,0.24)] backdrop-blur-2xl">
           <div className="border-b border-white/80 bg-[radial-gradient(circle_at_top_left,_rgba(251,191,36,0.18),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(56,189,248,0.16),_transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96))] px-5 py-5">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
@@ -1234,7 +1510,7 @@ export function SmartAssistant() {
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col gap-4 p-5">
-            <div className="flex min-h-0 flex-1 flex-col rounded-[28px] border border-slate-200 bg-white p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+            <div className="flex min-h-[520px] flex-1 flex-col rounded-[28px] border border-slate-200 bg-white p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
               <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
                 <Sparkles className="h-3.5 w-3.5" />
                 Conversation
@@ -1298,30 +1574,6 @@ export function SmartAssistant() {
               </div>
             ) : null}
 
-            <div className="rounded-[26px] border border-slate-200 bg-slate-50 p-3">
-              <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                <MessageSquare className="h-3.5 w-3.5" />
-                Quick prompts
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-              {[
-                "how many leads are there in current data",
-                "give me a summary of current projects",
-                "show overdue tasks",
-                "search records Taste & Table"
-              ].map((suggestion) => (
-                <button
-                  key={suggestion}
-                  type="button"
-                  onClick={() => setPrompt(suggestion)}
-                  className="rounded-full border border-slate-200 bg-white px-4 py-3 text-left text-sm font-medium text-slate-700 shadow-sm transition hover:-translate-y-[1px] hover:border-slate-300 hover:bg-slate-50 hover:shadow-md"
-                >
-                  {suggestion}
-                </button>
-              ))}
-              </div>
-            </div>
-
             <div className="flex gap-3 rounded-[24px] border border-violet-100 bg-white p-2 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
               <Input
                 ref={inputRef}
@@ -1332,19 +1584,24 @@ export function SmartAssistant() {
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault();
-                    executePrompt();
+                    void executePrompt();
                   }
                 }}
               />
-              <Button size="icon" className="h-12 w-12 shrink-0 rounded-2xl bg-slate-900 text-white shadow-[0_16px_40px_rgba(15,23,42,0.2)] hover:bg-slate-800" onClick={executePrompt} aria-label="Run assistant command">
+              <Button size="icon" className="h-12 w-12 shrink-0 rounded-2xl bg-slate-900 text-white shadow-[0_16px_40px_rgba(15,23,42,0.2)] hover:bg-slate-800" onClick={() => void executePrompt()} aria-label="Run assistant command">
                 <Send className="h-4 w-4" />
               </Button>
             </div>
           </div>
-        </Card>
+          </Card>
+        </>
       ) : null}
 
-      <Button size="lg" className="rounded-full px-5 shadow-[0_24px_60px_rgba(245,158,11,0.26)]" onClick={() => setOpen((value) => !value)}>
+      <Button
+        size="lg"
+        className="pointer-events-auto mb-5 mr-5 rounded-full px-5 shadow-[0_24px_60px_rgba(245,158,11,0.26)]"
+        onClick={() => setOpen((value) => !value)}
+      >
         <MessageSquare className="mr-2 h-5 w-5" />
         Voice Assistant
       </Button>

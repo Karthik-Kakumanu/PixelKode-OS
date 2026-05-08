@@ -2,10 +2,13 @@
 
 import {
   type ColumnDef,
+  type SortingState,
   flexRender,
   getCoreRowModel,
+  getSortedRowModel,
   useReactTable
 } from "@tanstack/react-table";
+import { useState } from "react";
 
 import { Card } from "@/components/ui/card";
 
@@ -20,10 +23,16 @@ export function DataTable<TData>({
   columns: ColumnDef<TData>[];
   data: TData[];
 }) {
+  const [sorting, setSorting] = useState<SortingState>([]);
   const table = useReactTable({
     columns,
     data,
-    getCoreRowModel: getCoreRowModel()
+    state: {
+      sorting
+    },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel()
   });
 
   return (
@@ -39,7 +48,16 @@ export function DataTable<TData>({
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
                   <th key={header.id} className="pb-3 font-medium">
-                    {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                    {header.isPlaceholder ? null : (
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 text-left"
+                        onClick={header.column.getToggleSortingHandler()}
+                      >
+                        {flexRender(header.column.columnDef.header, header.getContext())}
+                        {{ asc: "↑", desc: "↓" }[header.column.getIsSorted() as string] ?? ""}
+                      </button>
+                    )}
                   </th>
                 ))}
               </tr>

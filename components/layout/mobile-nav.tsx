@@ -12,7 +12,12 @@ const items = [
   { href: "/revenue", label: "Revenue" },
   { href: "/team", label: "Team" },
   { href: "/content", label: "Content" },
-  { href: "/services", label: "Services" }
+  { href: "/services", label: "Services" },
+  { href: "/meet-session", label: "Meet" },
+  { href: "/shopping", label: "Shopping" },
+  { href: "/timetable", label: "Timetable" },
+  { href: "/servers", label: "Servers" },
+  { href: "/databases", label: "Databases" }
 ];
 
 export function MobileNav() {

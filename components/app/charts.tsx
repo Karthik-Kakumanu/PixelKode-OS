@@ -40,6 +40,25 @@ function truncateProjectLabel(value: string, maxLength = 18) {
   return `${trimmed.slice(0, maxLength - 3).trimEnd()}...`;
 }
 
+function compactAxisTick(value: string, maxLength = 12) {
+  const trimmed = value.trim();
+  if (trimmed.length <= maxLength) {
+    return trimmed;
+  }
+
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  if (words.length > 1) {
+    const compactWords = words
+      .map((word, index) => (index === 0 ? word.slice(0, Math.min(word.length, 6)) : word.charAt(0)))
+      .join(" ");
+    if (compactWords.length <= maxLength) {
+      return compactWords;
+    }
+  }
+
+  return `${trimmed.slice(0, maxLength - 3).trimEnd()}...`;
+}
+
 function compactProjectLabel(value: string, maxLength = 18) {
   const trimmed = value.trim();
   if (trimmed.length <= maxLength) {
@@ -71,6 +90,38 @@ function ProjectAxisTick({
   );
 }
 
+function CompactBottomTick({
+  x,
+  y,
+  payload,
+  maxLength = 12
+}: {
+  x?: number;
+  y?: number;
+  payload?: { value?: string };
+  maxLength?: number;
+}) {
+  const value = String(payload?.value ?? "");
+  const label = compactAxisTick(value, maxLength);
+
+  return (
+    <g transform={`translate(${x ?? 0},${y ?? 0})`}>
+      <title>{value}</title>
+      <text
+        x={0}
+        y={10}
+        textAnchor="end"
+        fill="#6c5d8f"
+        fontSize={11}
+        fontWeight={500}
+        transform="rotate(-18)"
+      >
+        {label}
+      </text>
+    </g>
+  );
+}
+
 function ChartShell({
   title,
   subtitle,
@@ -89,13 +140,13 @@ function ChartShell({
   style?: React.CSSProperties;
 }) {
   return (
-    <Card className={cn("h-[360px] overflow-hidden p-0", className)} style={style}>
+    <Card className={cn("h-[390px] overflow-hidden rounded-[28px] border-white/80 bg-white/95 p-0 shadow-[0_28px_80px_rgba(15,23,42,0.12)]", className)} style={style}>
       <div className="flex h-full flex-col">
-        <div className={cn("border-b border-slate-200 bg-slate-50 px-6 py-5", headerClassName)}>
-          <h3 className="text-xl font-semibold text-slate-950">{title}</h3>
-          {subtitle ? <p className="mt-1.5 text-sm leading-6 text-slate-500">{subtitle}</p> : null}
+        <div className={cn("border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.92))] px-7 py-6", headerClassName)}>
+          <h3 className="text-[24px] font-semibold tracking-tight text-slate-950">{title}</h3>
+          {subtitle ? <p className="mt-2 text-sm leading-6 text-slate-500">{subtitle}</p> : null}
         </div>
-        <div className={cn("min-h-0 flex-1 bg-white px-4 pb-4 pt-3", bodyClassName)}>{children}</div>
+        <div className={cn("min-h-0 flex-1 bg-white px-5 pb-5 pt-4", bodyClassName)}>{children}</div>
       </div>
     </Card>
   );
@@ -124,17 +175,37 @@ export function RevenueLineChart({
 }
 
 export function ServiceBarChart({
-  data
+  data,
+  title = "Service Revenue",
+  subtitle = "Charged value split by project category",
+  valueFormatter,
+  compactLabels = false
 }: {
   data: { name: string; value: number }[];
+  title?: string;
+  subtitle?: string;
+  valueFormatter?: (value: number) => string;
+  compactLabels?: boolean;
 }) {
   return (
-    <ChartShell title="Service Revenue" subtitle="Charged value split by project category">
+    <ChartShell title={title} subtitle={subtitle}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data}>
           <CartesianGrid stroke={gridStroke} vertical={false} />
-          <XAxis dataKey="name" stroke={axisStroke} />
-          <YAxis stroke={axisStroke} tickFormatter={(value) => formatCurrency(Number(value)).replace(".00", "")} />
+          <XAxis
+            dataKey="name"
+            stroke={axisStroke}
+            interval={0}
+            height={58}
+            tick={compactLabels ? <CompactBottomTick maxLength={12} /> : { fontSize: 12 }}
+            tickFormatter={(value) => (compactLabels ? compactAxisTick(String(value), 12) : String(value))}
+          />
+          <YAxis
+            stroke={axisStroke}
+            tickFormatter={(value) =>
+              valueFormatter ? valueFormatter(Number(value)) : formatCurrency(Number(value)).replace(".00", "")
+            }
+          />
           <Tooltip contentStyle={tooltipStyle} />
           <Bar dataKey="value" radius={[16, 16, 0, 0]} isAnimationActive={false}>
             {data.map((item, index) => (
@@ -148,9 +219,15 @@ export function ServiceBarChart({
 }
 
 export function StatusPieChart({
-  data
+  data,
+  title = "Project Status Mix",
+  subtitle = "Completion state across all projects",
+  centerLabel = "Projects"
 }: {
   data: { name: string; value: number }[];
+  title?: string;
+  subtitle?: string;
+  centerLabel?: string;
 }) {
   const filteredData = data.filter((item) => item.value > 0);
   const chartData = filteredData.length > 0 ? filteredData : [{ name: "No Data", value: 1 }];
@@ -160,8 +237,8 @@ export function StatusPieChart({
 
   return (
     <ChartShell
-      title="Project Status Mix"
-      subtitle="Completion state across all projects"
+      title={title}
+      subtitle={subtitle}
       className="h-[470px]"
       bodyClassName="px-4 pb-6 pt-3"
     >
@@ -198,7 +275,7 @@ export function StatusPieChart({
                 {total}
               </text>
               <text x="50%" y="58%" textAnchor="middle" dominantBaseline="central" className="fill-slate-500 text-[10px] font-medium uppercase tracking-[0.18em]">
-                Projects
+                {centerLabel}
               </text>
             </PieChart>
           </ResponsiveContainer>
@@ -293,7 +370,7 @@ export function TeamCapacityChart({
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data}>
           <CartesianGrid stroke={gridStroke} vertical={false} />
-          <XAxis dataKey="name" stroke={axisStroke} />
+          <XAxis dataKey="name" stroke={axisStroke} interval={0} height={58} tick={<CompactBottomTick maxLength={12} />} />
           <YAxis stroke={axisStroke} />
           <Tooltip contentStyle={tooltipStyle} />
           <Legend />
@@ -315,7 +392,7 @@ export function ServiceDeliveryChart({
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data}>
           <CartesianGrid stroke={gridStroke} vertical={false} />
-          <XAxis dataKey="name" stroke={axisStroke} />
+          <XAxis dataKey="name" stroke={axisStroke} interval={0} height={58} tick={<CompactBottomTick maxLength={12} />} />
           <YAxis stroke={axisStroke} />
           <Tooltip contentStyle={tooltipStyle} />
           <Legend />
@@ -337,7 +414,7 @@ export function ContentLeadsChart({
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data}>
           <CartesianGrid stroke={gridStroke} vertical={false} />
-          <XAxis dataKey="name" stroke={axisStroke} />
+          <XAxis dataKey="name" stroke={axisStroke} interval={0} height={58} tick={<CompactBottomTick maxLength={12} />} />
           <YAxis stroke={axisStroke} />
           <Tooltip contentStyle={tooltipStyle} />
           <Bar dataKey="leads" radius={[14, 14, 0, 0]} fill="#3b82f6" isAnimationActive={false} />
@@ -357,7 +434,7 @@ export function SectorRevenueChart({
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data}>
           <CartesianGrid stroke={gridStroke} vertical={false} />
-          <XAxis dataKey="name" stroke={axisStroke} />
+          <XAxis dataKey="name" stroke={axisStroke} interval={0} height={58} tick={<CompactBottomTick maxLength={12} />} />
           <YAxis stroke={axisStroke} tickFormatter={(value) => formatCurrency(Number(value)).replace(".00", "")} />
           <Tooltip contentStyle={tooltipStyle} />
           <Bar dataKey="value" radius={[14, 14, 0, 0]} isAnimationActive={false}>
@@ -372,26 +449,37 @@ export function SectorRevenueChart({
 }
 
 export function ServiceDemandMixChart({
-  data
+  data,
+  title = "Service Demand Board",
+  subtitle = "Leads flowing into each offer vs projects delivered"
 }: {
   data: { name: string; leads: number; projects: number }[];
+  title?: string;
+  subtitle?: string;
 }) {
   return (
     <ChartShell
-      title="Service Demand Board"
-      subtitle="Leads flowing into each offer vs projects delivered"
+      title={title}
+      subtitle={subtitle}
       className="h-[340px]"
       bodyClassName="px-4 pb-3 pt-3"
     >
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} barCategoryGap={22}>
           <CartesianGrid stroke={gridStroke} vertical={false} />
-          <XAxis dataKey="name" stroke={axisStroke} tick={{ fontSize: 12 }} interval={0} />
+          <XAxis
+            dataKey="name"
+            stroke={axisStroke}
+            interval={0}
+            height={64}
+            tick={<CompactBottomTick maxLength={13} />}
+            tickFormatter={(value) => compactAxisTick(String(value), 13)}
+          />
           <YAxis stroke={axisStroke} />
           <Tooltip contentStyle={tooltipStyle} />
           <Legend />
-          <Bar dataKey="leads" fill="#ff5fa2" radius={[12, 12, 0, 0]} maxBarSize={34} isAnimationActive={false} />
-          <Bar dataKey="projects" fill="#1cc8c0" radius={[12, 12, 0, 0]} maxBarSize={34} isAnimationActive={false} />
+          <Bar dataKey="leads" fill="#ff5fa2" radius={[12, 12, 0, 0]} maxBarSize={24} isAnimationActive={false} />
+          <Bar dataKey="projects" fill="#1cc8c0" radius={[12, 12, 0, 0]} maxBarSize={24} isAnimationActive={false} />
         </BarChart>
       </ResponsiveContainer>
     </ChartShell>
@@ -477,7 +565,7 @@ export function OpsPulseChart({
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} barCategoryGap={28}>
           <CartesianGrid stroke={gridStroke} vertical={false} />
-          <XAxis dataKey="name" stroke={axisStroke} tick={{ fontSize: 12 }} interval={0} />
+          <XAxis dataKey="name" stroke={axisStroke} interval={0} height={58} tick={<CompactBottomTick maxLength={12} />} />
           <YAxis stroke={axisStroke} />
           <Tooltip contentStyle={tooltipStyle} />
           <Bar dataKey="value" radius={[14, 14, 0, 0]} maxBarSize={72} isAnimationActive={false}>

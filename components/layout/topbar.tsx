@@ -1,8 +1,8 @@
 "use client";
 
-import { Bell, Menu } from "lucide-react";
+import { Bell, Menu, Moon, Sun } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { logoutAction } from "@/app/(app)/actions";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,20 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
   const readAlertIds = useBusinessStore((state) => state.readAlertIds);
   const markAlertRead = useBusinessStore((state) => state.markAlertRead);
   const markAllAlertsRead = useBusinessStore((state) => state.markAllAlertsRead);
+  const theme = useBusinessStore((state) => state.theme);
+  const setTheme = useBusinessStore((state) => state.setTheme);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
+  const themeLabel = isMounted
+    ? theme === "dark"
+      ? "Switch to bright mode"
+      : "Switch to dark mode"
+    : "Toggle theme";
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   const unreadAlerts = useMemo(
     () => alerts.filter((alert) => !readAlertIds.includes(alert.id)),
     [alerts, readAlertIds]
@@ -34,22 +47,35 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
       </div>
 
       <div className="flex items-center gap-3">
-        <div className="relative">
           <Button
             variant="outline"
             size="icon"
             className="relative h-10 w-10 rounded-full border-slate-200 bg-white shadow-sm"
-            onClick={() => setNotificationsOpen((value) => !value)}
-            aria-label="Open notifications"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            aria-label={themeLabel}
           >
-            <Bell className="h-4 w-4 text-slate-700" />
-            {unreadAlerts.length > 0 ? (
-              <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
-                {Math.min(unreadAlerts.length, 9)}+
-              </span>
-            ) : null}
+            {isMounted ? (
+              theme === "dark" ? <Sun className="h-4 w-4 text-amber-500" /> : <Moon className="h-4 w-4 text-slate-700" />
+            ) : (
+              <span className="block h-4 w-4 rounded-full bg-slate-200/70" />
+            )}
           </Button>
 
+          <div className="relative">
+            <Button
+              variant="outline"
+              size="icon"
+              className="relative h-10 w-10 rounded-full border-slate-200 bg-white shadow-sm"
+              onClick={() => setNotificationsOpen((value) => !value)}
+              aria-label="Open notifications"
+            >
+              <Bell className="h-4 w-4 text-slate-700" />
+              {unreadAlerts.length > 0 ? (
+                <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+                  {Math.min(unreadAlerts.length, 9)}+
+                </span>
+              ) : null}
+            </Button>
           {notificationsOpen ? (
             <div className="absolute right-0 top-12 z-40 w-[360px] rounded-[24px] border border-slate-200 bg-white p-3 shadow-[0_22px_70px_rgba(15,23,42,0.16)]">
               <div className="flex items-center justify-between gap-3 px-2 py-2">

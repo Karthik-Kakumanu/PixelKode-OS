@@ -10,6 +10,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const loadSheets = useBusinessStore((state) => state.loadSheets);
   const syncPendingChanges = useBusinessStore((state) => state.syncPendingChanges);
+  const theme = useBusinessStore((state) => state.theme);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
@@ -18,6 +19,14 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       console.error("Service worker registration failed", error);
     });
   }, []);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    const root = document.documentElement;
+    root.classList.toggle("dark", theme === "dark");
+    root.style.colorScheme = theme;
+  }, [theme]);
 
   useEffect(() => {
     if (pathname === "/login") return;

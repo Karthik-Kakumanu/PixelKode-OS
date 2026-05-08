@@ -1,14 +1,28 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Filter, LayoutGrid, ListFilter, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  ArrowUpDown,
+  Download,
+  Filter,
+  LayoutGrid,
+  ListFilter,
+  Plus,
+  Search,
+  SlidersHorizontal,
+  Trash2
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { getColumnIcon, getColumnOptions, getOptionClasses, getRequiredColumns } from "@/lib/sheet-ui";
 import { useBusinessStore } from "@/lib/store";
-import type { CellValue, ColumnType, SheetColumn, SheetKey } from "@/lib/types";
+import type { CellValue, ColumnType, SheetColumn, SheetData, SheetKey } from "@/lib/types";
 
 type QuickView = {
   id: string;
@@ -28,6 +42,58 @@ function shouldRenderAsSelect(sheetKey: SheetKey, column: SheetColumn) {
 function castValue(type: ColumnType, value: string) {
   if (type === "number") return value === "" ? 0 : Number(value);
   return value;
+}
+
+function clampDimension(value: number, min = 50, max = 2000) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getAutoColumnWidth(sheet: SheetData, columnId: string): number {
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  const font = "500 14px Inter, system-ui, sans-serif";
+  if (context) {
+    context.font = font;
+  }
+
+  const estimateWidth = (text: string) => {
+    if (!context) return text.length * 10;
+    return context.measureText(text).width;
+  };
+
+  let maxWidth = 80;
+  const headerText = String(sheet.columns.find((column) => column.id === columnId)?.label ?? "");
+  maxWidth = Math.max(maxWidth, estimateWidth(headerText) + 48);
+
+  sheet.rows.forEach((row) => {
+    const value = String(row[columnId] ?? "");
+    maxWidth = Math.max(maxWidth, estimateWidth(value) + 24);
+  });
+
+  return Math.min(Math.max(maxWidth, 80), 1400); // Cap at 1400px
+}
+
+function getAutoRowHeight(sheet: SheetData, rowIndex: number): number {
+  const row = sheet.rows[rowIndex];
+  const longestText = sheet.columns.reduce((max, column) => {
+    const value = String(row[column.id] ?? "");
+    return Math.max(max, value.length);
+  }, 0);
+
+  const estimatedLines = Math.max(1, Math.ceil(longestText / 25));
+  return clampDimension(32 + estimatedLines * 22, 52, 600);
+}
+
+function normalizeSortValue(value: CellValue) {
+  if (typeof value === "number") return value;
+  if (typeof value === "boolean") return value ? 1 : 0;
+  const stringValue = String(value ?? "").trim();
+  if (/^\d+$/.test(stringValue)) return Number(stringValue);
+  return stringValue.toLowerCase();
+}
+
+function quoteCsv(value: string) {
+  return `"${String(value).replace(/"/g, '""')}"`;
 }
 
 function getNumberInputBounds(sheetKey: SheetKey, row: Record<string, CellValue>, columnId: string) {
@@ -62,6 +128,29 @@ function getCellClasses(column: SheetColumn, value: CellValue | undefined) {
 
 function toDayString(value: unknown) {
   return typeof value === "string" ? value : "";
+}
+
+function getTimetableReferenceDate(now: Date) {
+  const reference = new Date(now);
+  if (now.getHours() > 21 || (now.getHours() === 21 && now.getMinutes() >= 0)) {
+    reference.setDate(reference.getDate() + 1);
+  }
+  reference.setHours(0, 0, 0, 0);
+  return reference;
+}
+
+function formatTimetableHeader(columnId: string, fallbackLabel: string, now: Date) {
+  const weekdayOrder = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  const targetDay = weekdayOrder.indexOf(columnId);
+  if (targetDay === -1) return fallbackLabel;
+
+  const reference = getTimetableReferenceDate(now);
+  const delta = (targetDay - reference.getDay() + 7) % 7;
+  const targetDate = new Date(reference);
+  targetDate.setDate(reference.getDate() + delta);
+
+  const dateLabel = `${String(targetDate.getDate()).padStart(2, "0")}/${String(targetDate.getMonth() + 1).padStart(2, "0")}/${targetDate.getFullYear()}`;
+  return `${fallbackLabel} · ${dateLabel}`;
 }
 
 function buildQuickViews(sheetKey: SheetKey): QuickView[] {
@@ -175,8 +264,11 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
   const servicesSheet = useBusinessStore((state) => state.sheets.services);
   const addRow = useBusinessStore((state) => state.addRow);
   const deleteRow = useBusinessStore((state) => state.deleteRow);
+  const moveRow = useBusinessStore((state) => state.moveRow);
   const addColumn = useBusinessStore((state) => state.addColumn);
   const deleteColumn = useBusinessStore((state) => state.deleteColumn);
+  const moveColumn = useBusinessStore((state) => state.moveColumn);
+  const updateColumnWidth = useBusinessStore((state) => state.updateColumnWidth);
   const updateCell = useBusinessStore((state) => state.updateCell);
   const addColumnOption = useBusinessStore((state) => state.addColumnOption);
   const isLoaded = useBusinessStore((state) => state.isLoaded);
@@ -185,20 +277,143 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
 
   const [newColumnLabel, setNewColumnLabel] = useState("");
   const [newColumnType, setNewColumnType] = useState<ColumnType>("text");
+  const [newColumnOptions, setNewColumnOptions] = useState("");
   const [search, setSearch] = useState("");
   const [filterColumnId, setFilterColumnId] = useState("all");
   const [filterValue, setFilterValue] = useState("all");
   const [quickViewId, setQuickViewId] = useState("all");
   const [customOptionDrafts, setCustomOptionDrafts] = useState<Record<string, string>>({});
   const [isMounted, setIsMounted] = useState(false);
+  const [sortKey, setSortKey] = useState("none");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
+    if (!sheet) return {};
+    return sheet.columns.reduce<Record<string, number>>((result, column) => {
+      result[column.id] = Number(String(column.width ?? "").replace(/px/g, "")) || 180;
+      return result;
+    }, {});
+  });
+  const [rowHeights, setRowHeights] = useState<Record<number, number>>(() => {
+    if (!sheet) return {};
+    return sheet.rows.reduce<Record<number, number>>((result, _, index) => {
+      result[index] = 52;
+      return result;
+    }, {});
+  });
+  const [columnResizing, setColumnResizing] = useState<{
+    columnId: string;
+    startX: number;
+    startWidth: number;
+    pointerId: number;
+  } | null>(null);
+  const [rowResizing, setRowResizing] = useState<{
+    rowIndex: number;
+    startY: number;
+    startHeight: number;
+  } | null>(null);
+  const tableContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const clampDimension = (value: number, min = 50, max = 2000) => {
+    return Math.min(Math.max(value, min), max);
+  };
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
+  useEffect(() => {
+    setColumnWidths(() =>
+      sheet.columns.reduce<Record<string, number>>((result, column) => {
+        result[column.id] = Number(String(column.width ?? "").replace(/px/g, "")) || 180;
+        return result;
+      }, {})
+    );
+  }, [sheet.columns]);
+
+  useEffect(() => {
+    setRowHeights((current) => {
+      const next = { ...current };
+      sheet.rows.forEach((_, index) => {
+        if (next[index] == null) {
+          next[index] = 52;
+        }
+      });
+      return next;
+    });
+  }, [sheet.rows.length]);
+
+  useEffect(() => {
+    if (!columnResizing && !rowResizing) return;
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (columnResizing) {
+        const nextWidth = clampDimension(columnResizing.startWidth + event.clientX - columnResizing.startX);
+        setColumnWidths((current) => ({
+          ...current,
+          [columnResizing.columnId]: nextWidth
+        }));
+      }
+
+      if (rowResizing) {
+        const nextHeight = clampDimension(rowResizing.startHeight + event.clientY - rowResizing.startY, 32, 1200);
+        setRowHeights((current) => ({
+          ...current,
+          [rowResizing.rowIndex]: nextHeight
+        }));
+      }
+    };
+
+    const finishResize = () => {
+      if (columnResizing) {
+        const width = columnWidths[columnResizing.columnId];
+        if (width != null) {
+          updateColumnWidth(sheetKey, columnResizing.columnId, width);
+        }
+
+        tableContainerRef.current?.releasePointerCapture?.(columnResizing.pointerId);
+      }
+
+      setColumnResizing(null);
+      setRowResizing(null);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.body.style.cursor = columnResizing ? "col-resize" : rowResizing ? "row-resize" : "";
+    document.body.style.userSelect = "none";
+    document.addEventListener("pointermove", handlePointerMove);
+    document.addEventListener("pointerup", finishResize);
+    document.addEventListener("pointercancel", finishResize);
+
+    return () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("pointermove", handlePointerMove);
+      document.removeEventListener("pointerup", finishResize);
+      document.removeEventListener("pointercancel", finishResize);
+    };
+  }, [columnResizing, rowResizing, columnWidths, sheetKey, updateColumnWidth]);
+
   const requiredColumns = useMemo(() => new Set(getRequiredColumns(sheetKey)), [sheetKey]);
   const quickViews = useMemo(() => buildQuickViews(sheetKey), [sheetKey]);
   const selectableColumns = useMemo(() => (sheet ? sheet.columns.filter((column) => shouldRenderAsSelect(sheetKey, column)) : []), [sheet, sheetKey]);
+  const displayColumns = useMemo(() => {
+    if (!isMounted || sheetKey !== "timetable") {
+      return sheet.columns;
+    }
+
+    const now = new Date();
+    return sheet.columns.map((column) => {
+      if (!["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].includes(column.id)) {
+        return column;
+      }
+
+      return {
+        ...column,
+        label: formatTimetableHeader(column.id, column.label, now)
+      };
+    });
+  }, [isMounted, sheet.columns, sheetKey]);
 
   const filteredRows = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -232,6 +447,39 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
     return Array.from(new Set([...getColumnOptions(sheetKey, column), ...dynamicOptions]));
   }, [filterColumnId, servicesSheet?.rows, sheet, sheetKey]);
 
+  const sortedRows = useMemo(() => {
+    const rows = [...filteredRows];
+    if (sortKey === "none") return rows;
+    if (sortKey === "slNo") return rows;
+
+    const column = sheet.columns.find((item) => item.id === sortKey);
+    if (!column) return rows;
+
+    return rows.sort((left, right) => {
+      const leftValue = normalizeSortValue(left[sortKey]);
+      const rightValue = normalizeSortValue(right[sortKey]);
+
+      if (leftValue < rightValue) return sortDirection === "asc" ? -1 : 1;
+      if (leftValue > rightValue) return sortDirection === "asc" ? 1 : -1;
+      return 0;
+    });
+  }, [filteredRows, sheet.columns, sortDirection, sortKey]);
+
+  const downloadSheetCsv = () => {
+    const headers = ["SL. No", ...displayColumns.map((column) => column.label)];
+    const rows = sortedRows.map((row, index) => [String(index + 1), ...displayColumns.map((column) => String(row[column.id] ?? ""))]);
+    const csv = [headers, ...rows].map((items) => items.map(quoteCsv).join(",")).join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const href = window.URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = href;
+    anchor.download = `${sheetKey}-sheet.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    window.URL.revokeObjectURL(href);
+  };
+
   const setCustomDraft = (rowId: string, columnId: string, value: string) => {
     setCustomOptionDrafts((current) => ({
       ...current,
@@ -255,7 +503,7 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
 
   if (!isMounted) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6" suppressHydrationWarning>
         <Card className="overflow-hidden p-0">
           <div className="border-b border-white/70 bg-white/80 px-4 py-3">
             <div>
@@ -316,116 +564,216 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
         <div className="space-y-4 p-4">
           {error ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : null}
 
-          <div className="flex flex-wrap gap-2">
-            {quickViews.map((view) => (
-              <button
-                key={view.id}
-                type="button"
-                onClick={() => setQuickViewId(view.id)}
-                className={`rounded-full border px-3 py-2 text-sm font-medium transition ${
-                  quickViewId === view.id
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-white"
-                }`}
-              >
-                {view.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="grid gap-3 xl:grid-cols-[minmax(260px,1.2fr)_220px_220px_auto]">
-            <div className="relative">
-              <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <Input value={search} onChange={(event) => setSearch(event.target.value)} className="pl-11" placeholder="Search rows, names, values, notes..." />
-            </div>
-            <div className="relative">
-              <ListFilter className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <select
-                value={filterColumnId}
-                onChange={(event) => {
-                  setFilterColumnId(event.target.value);
-                  setFilterValue("all");
-                }}
-                suppressHydrationWarning
-                className="h-11 w-full rounded-2xl border border-white/80 bg-white/90 pl-11 pr-4 text-sm text-slate-800 outline-none"
-              >
-                <option value="all">Filter by all columns</option>
-                {selectableColumns.map((column) => (
-                  <option key={column.id} value={column.id}>
-                    {column.label}
-                  </option>
+          <div className="rounded-[26px] border border-white/80 bg-white/90 p-4 shadow-sm space-y-3">
+            {error ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : null}
+            
+            {/* Row 1: Quick views + Search */}
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {quickViews.map((view) => (
+                  <button
+                    key={view.id}
+                    type="button"
+                    onClick={() => setQuickViewId(view.id)}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                      quickViewId === view.id
+                        ? "border-slate-800 bg-slate-800 text-white"
+                        : "border-slate-200 bg-slate-100 text-slate-600 hover:border-slate-300 hover:bg-slate-200"
+                    }`}
+                  >
+                    {view.label}
+                  </button>
                 ))}
-              </select>
+              </div>
+              
+              <div className="relative w-full lg:w-72">
+                <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  className="h-10 w-full rounded-2xl border border-white/80 bg-white/90 pl-11 pr-4 text-sm text-slate-800"
+                  placeholder="Search rows, names, values, notes..."
+                />
+              </div>
             </div>
-            <div className="relative">
-              <Filter className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <select
-                value={filterValue}
-                onChange={(event) => setFilterValue(event.target.value)}
-                disabled={filterColumnId === "all"}
-                suppressHydrationWarning
-                className="h-11 w-full rounded-2xl border border-white/80 bg-white/90 pl-11 pr-4 text-sm text-slate-800 outline-none disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <option value="all">All values</option>
-                {activeFilterOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
+            
+            {/* Row 2: Filters + Sort */}
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="relative">
+                <ListFilter className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <select
+                  value={filterColumnId}
+                  onChange={(event) => {
+                    setFilterColumnId(event.target.value);
+                    setFilterValue("all");
+                  }}
+                  suppressHydrationWarning
+                  className="h-10 w-full rounded-2xl border border-white/80 bg-white/90 pl-11 pr-4 text-xs text-slate-800 outline-none"
+                >
+                  <option value="all">Filter by all columns</option>
+                  {selectableColumns.map((column) => (
+                    <option key={column.id} value={column.id}>
+                      {column.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div className="relative">
+                <Filter className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <select
+                  value={filterValue}
+                  onChange={(event) => setFilterValue(event.target.value)}
+                  disabled={filterColumnId === "all"}
+                  suppressHydrationWarning
+                  className="h-10 w-full rounded-2xl border border-white/80 bg-white/90 pl-11 pr-4 text-xs text-slate-800 outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <option value="all">All values</option>
+                  {activeFilterOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div className="flex items-end gap-2">
+                <select
+                  value={sortKey}
+                  onChange={(event) => setSortKey(event.target.value)}
+                  className="h-10 flex-1 rounded-2xl border border-white/80 bg-white/90 px-4 text-xs text-slate-800 outline-none"
+                >
+                  <option value="none">No sorting</option>
+                  <option value="slNo">SL. No</option>
+                  {displayColumns.map((column) => (
+                    <option key={column.id} value={column.id}>
+                      {column.label}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={() => setSortDirection((direction) => (direction === "asc" ? "desc" : "asc"))}
+                  className="h-10 rounded-2xl"
+                >
+                  <ArrowUpDown className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
-            <div className="flex items-center gap-2 rounded-2xl border border-white/80 bg-white/70 px-3 py-2.5">
-              <SlidersHorizontal className="h-4 w-4 text-orange-500" />
-              <Input
-                value={newColumnLabel}
-                onChange={(event) => setNewColumnLabel(event.target.value)}
-                placeholder="Column name"
-                className="h-9 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-              />
+            
+            {/* Row 3: Add column + Export */}
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-[1fr_120px] lg:grid-cols-[minmax(180px,1fr)_140px_100px_100px]">
+              <div className="relative">
+                <Input
+                  value={newColumnLabel}
+                  onChange={(event) => setNewColumnLabel(event.target.value)}
+                  placeholder="Column name"
+                  className="h-10 w-full rounded-2xl border border-white/80 bg-white/90 px-4 text-sm text-slate-800"
+                />
+              </div>
+              
               <select
                 value={newColumnType}
-                onChange={(event) => setNewColumnType(event.target.value as ColumnType)}
+                onChange={(event) => {
+                  const nextType = event.target.value as ColumnType;
+                  setNewColumnType(nextType);
+                  if (nextType !== "select") {
+                    setNewColumnOptions("");
+                  }
+                }}
                 suppressHydrationWarning
-                className="h-9 rounded-xl border border-white/80 bg-white/90 px-3 text-sm text-slate-800 outline-none"
+                className="h-10 w-full rounded-2xl border border-white/80 bg-white/90 px-3 text-xs text-slate-800 outline-none"
               >
                 <option value="text">Text</option>
                 <option value="number">Number</option>
                 <option value="date">Date</option>
+                <option value="select">Dropdown</option>
                 <option value="textarea">Long text</option>
               </select>
+
+              {newColumnType === "select" ? (
+                <Input
+                  value={newColumnOptions}
+                  onChange={(event) => setNewColumnOptions(event.target.value)}
+                  placeholder="Dropdown options, comma separated"
+                  className="h-10 w-full rounded-2xl border border-white/80 bg-white/90 px-4 text-sm text-slate-800 lg:col-span-2"
+                />
+              ) : null}
+              
               <Button
                 size="sm"
                 onClick={() => {
                   const sanitized = newColumnLabel.trim();
+                  const parsedOptions =
+                    newColumnType === "select"
+                      ? Array.from(
+                          new Set(
+                            newColumnOptions
+                              .split(",")
+                              .map((option) => option.trim())
+                              .filter(Boolean)
+                          )
+                        )
+                      : undefined;
                   if (!sanitized) return;
+                  if (newColumnType === "select" && (!parsedOptions || parsedOptions.length === 0)) return;
                   addColumn(sheetKey, {
                     id: sanitized.toLowerCase().replace(/\s+/g, "_"),
                     label: sanitized,
                     type: newColumnType,
+                    options: parsedOptions,
                     width: "180px"
                   });
                   setNewColumnLabel("");
+                  setNewColumnOptions("");
                 }}
+                className="h-10 rounded-2xl"
               >
                 Add
+              </Button>
+              
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                onClick={downloadSheetCsv}
+                className="h-10 rounded-2xl"
+              >
+                <Download className="mr-1.5 h-3.5 w-3.5" />
+                Export
               </Button>
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-[22px] border border-white/70 bg-white/45">
+          <div ref={tableContainerRef} className="overflow-x-auto rounded-[22px] border border-white/70 bg-white/45">
             <table className="min-w-full table-fixed border-separate border-spacing-0 text-left text-sm">
+              <colgroup>
+                <col style={{ width: 72 }} />
+                {displayColumns.map((column) => (
+                  <col key={column.id} style={{ width: `${columnWidths[column.id] ?? 180}px` }} />
+                ))}
+                <col style={{ width: 110 }} />
+              </colgroup>
               <thead>
                 <tr>
-                  {sheet.columns.map((column) => {
+                  <th className="sticky left-0 top-0 z-20 border-b border-white/70 bg-gradient-to-b from-white to-fuchsia-50/90 px-3 py-3 text-left text-sm font-semibold text-slate-700 shadow-sm">
+                    SL. No
+                  </th>
+                  {displayColumns.map((column, columnIndex) => {
                     const Icon = getColumnIcon(column.id);
 
                     return (
                       <th
                         key={column.id}
-                        className="sticky top-0 z-10 border-b border-white/70 bg-gradient-to-b from-white to-fuchsia-50/70 px-3 py-3 font-semibold text-slate-700"
-                        style={{ width: column.width ?? "160px", minWidth: column.width ?? "160px" }}
+                        className="group sticky top-0 z-10 border-b border-white/70 bg-gradient-to-b from-white to-fuchsia-50/70 px-3 py-3 text-left text-sm font-semibold text-slate-700"
+                        style={{
+                          width: `${columnWidths[column.id] ?? 180}px`,
+                          minWidth: `${columnWidths[column.id] ?? 180}px`
+                        }}
                       >
-                        <div className="flex items-center justify-between gap-2">
+                        <div className="relative flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
                             <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-fuchsia-600 shadow-sm">
                               <Icon className="h-4 w-4" />
@@ -437,32 +785,132 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
                               ) : null}
                             </div>
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            type="button"
-                            className="h-8 w-8 rounded-xl"
-                            onClick={() => deleteColumn(sheetKey, column.id)}
-                            aria-label={`Delete ${column.label} column`}
+                          <div className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              type="button"
+                              className="h-8 w-8 rounded-xl"
+                              onClick={() => moveColumn(sheetKey, column.id, "left")}
+                              disabled={columnIndex === 0}
+                              aria-label={`Move ${column.label} left`}
+                            >
+                              <ArrowLeft className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              type="button"
+                              className="h-8 w-8 rounded-xl"
+                              onClick={() => moveColumn(sheetKey, column.id, "right")}
+                              disabled={columnIndex === sheet.columns.length - 1}
+                              aria-label={`Move ${column.label} right`}
+                            >
+                              <ArrowRight className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              type="button"
+                              className="h-8 w-8 rounded-xl"
+                              onClick={() => deleteColumn(sheetKey, column.id)}
+                              aria-label={`Delete ${column.label} column`}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                          <div
+                            className="absolute -right-3 top-0 z-40 flex h-full w-6 cursor-col-resize touch-none items-center justify-center"
+                            onPointerDown={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              tableContainerRef.current?.setPointerCapture?.(event.pointerId);
+                              setColumnResizing({
+                                columnId: column.id,
+                                startX: event.clientX,
+                                startWidth: columnWidths[column.id] ?? 180,
+                                pointerId: event.pointerId
+                              });
+                            }}
+                            onDoubleClick={() => {
+                              const nextWidth = getAutoColumnWidth(sheet, column.id);
+                              setColumnWidths((prev) => ({
+                                ...prev,
+                                [column.id]: nextWidth
+                              }));
+                              updateColumnWidth(sheetKey, column.id, nextWidth);
+                            }}
+                            title="Drag to resize column or double click to auto-fit"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                            <div className="h-full w-1 rounded-full bg-slate-300/90 transition group-hover:bg-slate-500 group-hover:shadow-[0_0_0_1px_rgba(71,85,105,0.15)]" />
+                          </div>
                         </div>
                       </th>
                     );
                   })}
-                  <th className="sticky right-0 top-0 z-10 w-[76px] min-w-[76px] border-b border-white/70 bg-gradient-to-b from-white to-sky-50/70 px-2 py-3 text-center font-semibold text-slate-700">
+                  <th className="sticky right-0 top-0 z-10 w-[110px] border-b border-white/70 bg-gradient-to-b from-white to-sky-50/70 px-2 py-3 text-center text-sm font-semibold text-slate-700">
                     Actions
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {filteredRows.map((row) => {
+                {sortedRows.map((row, displayIndex) => {
                   const rowIndex = sheet.rows.findIndex((item) => item.id === row.id);
+                  const height = rowHeights[rowIndex] ?? 52;
 
                   return (
-                    <tr key={String(row.id)} className="group">
-                      {sheet.columns.map((column) => {
+                    <tr key={String(row.id)} className="group" style={{ height: `${height}px` }}>
+                      <td
+                        className="sticky left-0 z-10 border-b border-white/60 bg-white/95 px-3 py-2 text-sm text-slate-700 shadow-sm"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold">{displayIndex + 1}</span>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              type="button"
+                              className="h-8 w-8 rounded-xl"
+                              onClick={() => moveRow(sheetKey, rowIndex, rowIndex - 1)}
+                              disabled={rowIndex === 0}
+                              aria-label="Move row up"
+                            >
+                              <ArrowUp className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              type="button"
+                              className="h-8 w-8 rounded-xl"
+                              onClick={() => moveRow(sheetKey, rowIndex, rowIndex + 1)}
+                              disabled={rowIndex === sheet.rows.length - 1}
+                              aria-label="Move row down"
+                            >
+                              <ArrowDown className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                        <div
+                          className="absolute inset-x-0 bottom-0 h-6 cursor-row-resize"
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            setRowResizing({
+                              rowIndex,
+                              startY: event.clientY,
+                              startHeight: height
+                            });
+                          }}
+                          onDoubleClick={() => {
+                            setRowHeights((prev) => ({
+                              ...prev,
+                              [rowIndex]: getAutoRowHeight(sheet, rowIndex)
+                            }));
+                          }}
+                        >
+                          <div className="mx-auto h-1 w-12 rounded-full bg-slate-200/70 transition hover:bg-slate-400/90" />
+                        </div>
+                      </td>
+                      {displayColumns.map((column) => {
                         const value = row[column.id];
                         const dynamicOptions =
                           sheetKey === "leads" && column.id === "servicePitch"
@@ -476,8 +924,11 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
                         return (
                           <td
                             key={column.id}
-                            className="border-b border-white/60 bg-gradient-to-b from-white/50 to-white/35 px-2 py-2 align-top group-hover:from-white/75 group-hover:to-fuchsia-50/50"
-                            style={{ width: column.width ?? "160px", minWidth: column.width ?? "160px" }}
+                            className="border-b border-white/60 bg-gradient-to-b from-white/50 via-slate-50 to-fuchsia-50 px-2 py-2 align-top group-hover:from-white/80 group-hover:to-fuchsia-50/60"
+                            style={{
+                              width: `${columnWidths[column.id] ?? 180}px`,
+                              minWidth: `${columnWidths[column.id] ?? 180}px`
+                            }}
                           >
                             {shouldUseSelect ? (
                               <div className="space-y-2">
@@ -566,7 +1017,7 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
               </tbody>
             </table>
 
-            {filteredRows.length === 0 ? (
+            {sortedRows.length === 0 ? (
               <div className="flex flex-col items-center gap-3 px-6 py-14 text-center">
                 <div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-gradient-to-br from-fuchsia-200 via-orange-100 to-sky-100 text-fuchsia-600">
                   <LayoutGrid className="h-6 w-6" />

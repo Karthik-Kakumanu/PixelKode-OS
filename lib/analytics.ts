@@ -34,6 +34,10 @@ export function buildDashboardMetrics(sheets: Record<string, SheetData>): Dashbo
   const revenue = sheets.revenue?.rows ?? [];
   const services = sheets.services?.rows ?? [];
   const team = sheets.team?.rows ?? [];
+  const shopping = sheets.shopping?.rows ?? [];
+  const servers = sheets.servers?.rows ?? [];
+  const databases = sheets.databases?.rows ?? [];
+  const timetable = sheets.timetable?.rows ?? [];
 
   const totalProjectValue = projects.reduce((sum, row) => sum + toNumber(row.projectValue), 0);
   const totalReceived = projects.reduce((sum, row) => sum + toNumber(row.amountReceived), 0);
@@ -57,6 +61,15 @@ export function buildDashboardMetrics(sheets: Record<string, SheetData>): Dashbo
   const conversionRate = leads.length > 0 ? Math.round((convertedLeads / leads.length) * 100) : 0;
   const callHitRate = totalCalls > 0 ? Math.round((connectedCalls / totalCalls) * 100) : 0;
   const activeServices = services.filter((row) => !["Paused", ""].includes(toText(row.status))).length;
+  const openShoppingItems = shopping.filter((row) => !["Bought", "Deferred"].includes(toText(row.purchaseStatus))).length;
+  const healthyServers = servers.filter((row) => toText(row.status) === "Healthy").length;
+  const infraCount = servers.length + databases.length;
+  const timetableCellsFilled = timetable.reduce(
+    (sum, row) =>
+      sum +
+      ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].filter((key) => toText(row[key]).trim() !== "").length,
+    0
+  );
 
   return [
     { label: "Project Value", value: formatCurrency(totalProjectValue), helper: "Total value of all listed projects" },
@@ -69,7 +82,10 @@ export function buildDashboardMetrics(sheets: Record<string, SheetData>): Dashbo
     { label: "Lead Conversion", value: `${conversionRate}%`, helper: "Converted leads from lead sheet" },
     { label: "Call Hit Rate", value: `${callHitRate}%`, helper: "Connected or interested calls" },
     { label: "Live Services", value: `${activeServices}`, helper: "Offers currently being pushed" },
-    { label: "Team Size", value: `${team.length}`, helper: "Current rows in team sheet" }
+    { label: "Team Size", value: `${team.length}`, helper: "Current rows in team sheet" },
+    { label: "Shopping Queue", value: `${openShoppingItems}`, helper: "Things still left to buy" },
+    { label: "Infra Coverage", value: `${healthyServers}/${infraCount}`, helper: "Healthy servers out of total infra assets" },
+    { label: "Timetable Slots", value: `${timetableCellsFilled}`, helper: "Filled plan cells across the weekly timetable" }
   ];
 }
 
@@ -80,6 +96,10 @@ export function buildBusinessSummary(sheets: Record<string, SheetData>) {
   const team = sheets.team?.rows ?? [];
   const content = sheets.content?.rows ?? [];
   const services = sheets.services?.rows ?? [];
+  const shopping = sheets.shopping?.rows ?? [];
+  const servers = sheets.servers?.rows ?? [];
+  const databases = sheets.databases?.rows ?? [];
+  const timetable = sheets.timetable?.rows ?? [];
 
   const activeProjects = projects.filter((row) => toText(row.projectStatus) === "In Progress").length;
   const completedProjects = projects.filter((row) => toText(row.projectStatus) === "Completed").length;
@@ -103,6 +123,17 @@ export function buildBusinessSummary(sheets: Record<string, SheetData>) {
   const totalContentLeads = content.reduce((sum, row) => sum + toNumber(row.leadsGenerated), 0);
   const teamHours = team.reduce((sum, row) => sum + toNumber(row.hoursPerWeek), 0);
   const servicesDelivered = services.reduce((sum, row) => sum + toNumber(row.projectsDone), 0);
+  const shoppingPending = shopping.filter((row) => ["To Buy", "Ordered"].includes(toText(row.purchaseStatus))).length;
+  const companyShopping = shopping.filter((row) => toText(row.listType) === "Company").length;
+  const personalShopping = shopping.filter((row) => toText(row.listType) === "Personal").length;
+  const healthyServers = servers.filter((row) => toText(row.status) === "Healthy").length;
+  const warningServers = servers.filter((row) => ["Warning", "Down"].includes(toText(row.status))).length;
+  const timetablePlannedCells = timetable.reduce(
+    (sum, row) =>
+      sum +
+      ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].filter((key) => toText(row[key]).trim() !== "").length,
+    0
+  );
 
   return {
     activeProjects,
@@ -118,7 +149,14 @@ export function buildBusinessSummary(sheets: Record<string, SheetData>) {
     scheduledContent,
     totalContentLeads,
     teamHours,
-    servicesDelivered
+    servicesDelivered,
+    shoppingPending,
+    companyShopping,
+    personalShopping,
+    healthyServers,
+    warningServers,
+    databasesTracked: databases.length,
+    timetablePlannedCells
   };
 }
 
@@ -273,4 +311,62 @@ export function buildContentPerformanceData(sheets: Record<string, SheetData>) {
     name: toText(row.contentTitle) || "Untitled",
     leads: toNumber(row.leadsGenerated)
   }));
+}
+
+export function buildShoppingStatusData(sheets: Record<string, SheetData>) {
+  const rows = sheets.shopping?.rows ?? [];
+  const totals = new Map<string, number>();
+
+  rows.forEach((row) => {
+    const key = toText(row.purchaseStatus) || "Unknown";
+    totals.set(key, (totals.get(key) ?? 0) + 1);
+  });
+
+  return Array.from(totals.entries()).map(([name, value]) => ({ name, value }));
+}
+
+export function buildShoppingSplitData(sheets: Record<string, SheetData>) {
+  const rows = sheets.shopping?.rows ?? [];
+  const totals = new Map<string, number>();
+
+  rows.forEach((row) => {
+    const key = toText(row.listType) || "Unknown";
+    totals.set(key, (totals.get(key) ?? 0) + 1);
+  });
+
+  return Array.from(totals.entries()).map(([name, value]) => ({ name, value }));
+}
+
+export function buildTimetableCoverageData(sheets: Record<string, SheetData>) {
+  const rows = sheets.timetable?.rows ?? [];
+  const days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+
+  return days.map((day) => ({
+    name: day.charAt(0).toUpperCase() + day.slice(1),
+    value: rows.reduce((sum, row) => sum + (toText(row[day]).trim() !== "" ? 1 : 0), 0)
+  }));
+}
+
+export function buildInfrastructureStatusData(sheets: Record<string, SheetData>) {
+  const servers = sheets.servers?.rows ?? [];
+  const databases = sheets.databases?.rows ?? [];
+
+  return [
+    { name: "Healthy Servers", value: servers.filter((row) => toText(row.status) === "Healthy").length },
+    { name: "Server Alerts", value: servers.filter((row) => ["Warning", "Down"].includes(toText(row.status))).length },
+    { name: "Databases", value: databases.length },
+    { name: "Prod Infra", value: servers.filter((row) => toText(row.environment) === "Production").length }
+  ];
+}
+
+export function buildInfrastructureEngineData(sheets: Record<string, SheetData>) {
+  const rows = sheets.databases?.rows ?? [];
+  const totals = new Map<string, number>();
+
+  rows.forEach((row) => {
+    const key = toText(row.engine) || "Unknown";
+    totals.set(key, (totals.get(key) ?? 0) + 1);
+  });
+
+  return Array.from(totals.entries()).map(([name, value]) => ({ name, value }));
 }

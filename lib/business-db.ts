@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { createDefaultSheets } from "@/lib/data";
+import { createDefaultSheets, normalizeTimetableSheet } from "@/lib/data";
 import type { CellValue, ColumnType, SheetColumn, SheetData, SheetKey, SheetRow } from "@/lib/types";
 
 const DEFAULT_STATE_ID = "pixelkode-main";
@@ -126,6 +126,8 @@ function normalizeSheets(input: unknown): BusinessSheets {
     team,
     content: normalizeSheet(candidate.content, fallback.content),
     services: normalizeSheet(candidate.services, fallback.services),
+    shopping: normalizeSheet(candidate.shopping, fallback.shopping),
+    timetable: normalizeTimetableSheet(normalizeSheet(candidate.timetable, fallback.timetable)),
     servers: normalizeSheet(candidate.servers, fallback.servers),
     databases: normalizeSheet(candidate.databases, fallback.databases)
   };

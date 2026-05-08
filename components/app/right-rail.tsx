@@ -1,8 +1,10 @@
 "use client";
 
 import { AlertTriangle, ArrowUpRight, BellRing, CalendarClock } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { Card } from "@/components/ui/card";
+import { readMeetHistory, type MeetSessionRecord } from "@/lib/meet-session-store";
 import { useBusinessStore } from "@/lib/store";
 import { formatCurrency } from "@/lib/utils";
 
@@ -13,6 +15,7 @@ function getSeverityTone(severity: "high" | "medium" | "low") {
 }
 
 export function RightRail() {
+  const [meetHistory, setMeetHistory] = useState<MeetSessionRecord[]>([]);
   const alerts = useBusinessStore((state) => state.alerts);
   const readAlertIds = useBusinessStore((state) => state.readAlertIds);
   const markAlertRead = useBusinessStore((state) => state.markAlertRead);
@@ -22,10 +25,29 @@ export function RightRail() {
   const projectRows = sheets.projects.rows;
   const leadRows = sheets.leads.rows;
   const contentRows = sheets.content.rows;
+  const shoppingRows = sheets.shopping.rows;
+  const serverRows = sheets.servers.rows;
+  const timetableRows = sheets.timetable.rows;
+
+  useEffect(() => {
+    const syncHistory = () => setMeetHistory(readMeetHistory());
+    syncHistory();
+
+    window.addEventListener("focus", syncHistory);
+    window.addEventListener("storage", syncHistory);
+    return () => {
+      window.removeEventListener("focus", syncHistory);
+      window.removeEventListener("storage", syncHistory);
+    };
+  }, []);
 
   const pendingCollections = projectRows.reduce((sum, row) => sum + Number(row.pendingAmount ?? 0), 0);
   const dueTodayLeads = leadRows.filter((row) => String(row.followUpDate ?? "") === new Date().toISOString().slice(0, 10)).length;
   const scheduledContent = contentRows.filter((row) => String(row.stage ?? "") === "Scheduled").length;
+  const pendingShopping = shoppingRows.filter((row) => ["To Buy", "Ordered"].includes(String(row.purchaseStatus ?? ""))).length;
+  const serverWarnings = serverRows.filter((row) => ["Warning", "Down"].includes(String(row.status ?? ""))).length;
+  const todayKey = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][new Date().getDay()];
+  const todaysPlan = timetableRows.filter((row) => String(row[todayKey] ?? "").trim() !== "").length;
 
   return (
     <div className="flex min-h-full flex-col gap-4">
@@ -46,6 +68,11 @@ export function RightRail() {
             <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Pending collections</p>
             <p className="mt-2 text-2xl font-semibold text-slate-950">{formatCurrency(pendingCollections)}</p>
             <p className="mt-1 text-sm text-slate-500">Outstanding money across active projects.</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Meet sessions</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-950">{meetHistory.length}</p>
+            <p className="mt-1 text-sm text-slate-500">Recent generated Google Meet links.</p>
           </div>
         </div>
       </Card>
@@ -100,6 +127,18 @@ export function RightRail() {
               {projectRows.filter((row) => String(row.projectStatus ?? "") !== "Completed").length}
             </span>
           </div>
+          <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <span className="text-sm text-slate-600">Shopping items pending</span>
+            <span className="text-base font-semibold text-slate-950">{pendingShopping}</span>
+          </div>
+          <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <span className="text-sm text-slate-600">Today's timetable slots</span>
+            <span className="text-base font-semibold text-slate-950">{todaysPlan}</span>
+          </div>
+          <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <span className="text-sm text-slate-600">Infra warnings</span>
+            <span className="text-base font-semibold text-slate-950">{serverWarnings}</span>
+          </div>
         </div>
       </Card>
 
@@ -119,6 +158,9 @@ export function RightRail() {
           </div>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
             Push today&apos;s follow-ups first so leads do not go cold.
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            Clear shopping queue and infra warnings before they turn into delivery blockers.
           </div>
           <div className="flex-1 rounded-2xl border border-dashed border-slate-300 bg-gradient-to-br from-white via-slate-50 to-sky-50 px-4 py-4">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Panel notes</p>

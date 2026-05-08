@@ -24,6 +24,8 @@ export type SheetKey =
   | "team"
   | "content"
   | "services"
+  | "shopping"
+  | "timetable"
   | "servers"
   | "databases";
 

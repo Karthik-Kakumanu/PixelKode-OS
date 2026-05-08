@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 
-import { createDefaultSheets } from "@/lib/data";
+import { createDefaultSheets, normalizeTimetableSheet, timetableDayColumnIds } from "@/lib/data";
 import { deriveOperationalAlerts } from "@/lib/operations";
 import type { CellValue, OperationAlert, SheetColumn, SheetData, SheetKey, SheetRow } from "@/lib/types";
 
@@ -10,17 +10,22 @@ interface BusinessStore {
   sheets: Record<SheetKey, SheetData>;
   alerts: OperationAlert[];
   readAlertIds: string[];
+  theme: "light" | "dark";
   isLoaded: boolean;
   isSaving: boolean;
   error: string;
   loadSheets: () => Promise<void>;
   syncPendingChanges: () => Promise<void>;
+  setTheme: (theme: "light" | "dark") => void;
   addRow: (sheet: SheetKey) => void;
   addRowWithValues: (sheet: SheetKey, values: Record<string, CellValue>, keepUnspecifiedEmpty?: boolean) => void;
   deleteRow: (sheet: SheetKey, rowIndex: number) => void;
+  moveRow: (sheet: SheetKey, fromIndex: number, toIndex: number) => void;
   updateCell: (sheet: SheetKey, rowIndex: number, columnId: string, value: CellValue) => void;
   addColumn: (sheet: SheetKey, column: SheetColumn) => void;
   deleteColumn: (sheet: SheetKey, columnId: string) => void;
+  moveColumn: (sheet: SheetKey, columnId: string, direction: "left" | "right") => void;
+  updateColumnWidth: (sheet: SheetKey, columnId: string, width: number) => void;
   addColumnOption: (sheet: SheetKey, columnId: string, option: string) => void;
   markAlertRead: (alertId: string) => void;
   markAllAlertsRead: () => void;
@@ -34,6 +39,8 @@ const PROJECT_REVENUE_SYNC_SOURCE = "project_income_sync";
 const LOCAL_CACHE_KEY = "pixelkode_os_cached_sheets";
 const LOCAL_PENDING_KEY = "pixelkode_os_pending_sheets";
 const LOCAL_READ_ALERTS_KEY = "pixelkode_os_read_alert_ids";
+const LOCAL_THEME_KEY = "pixelkode_os_theme";
+const LOCAL_TIMETABLE_ROLLOVER_KEY = "pixelkode_os_timetable_rollover_date";
 
 let alertRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -95,6 +102,110 @@ function writeStoredAlertIds(readAlertIds: string[]) {
     window.localStorage.setItem(LOCAL_READ_ALERTS_KEY, JSON.stringify(readAlertIds));
   } catch {
     // Ignore storage quota or serialization issues and continue with app state.
+  }
+}
+
+function readStoredTheme() {
+  if (!canUseStorage()) return "light" as const;
+
+  try {
+    const raw = window.localStorage.getItem(LOCAL_THEME_KEY);
+    return raw === "dark" ? "dark" : "light";
+  } catch {
+    return "light" as const;
+  }
+}
+
+function formatDateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function startOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function getMostRecentlyCompletedPlannerDate(now: Date) {
+  const today = startOfDay(now);
+  const afterCutoff = now.getHours() > 21 || (now.getHours() === 21 && now.getMinutes() >= 0);
+  return afterCutoff ? today : addDays(today, -1);
+}
+
+function readTimetableRolloverMarker() {
+  if (!canUseStorage()) return null;
+
+  try {
+    return window.localStorage.getItem(LOCAL_TIMETABLE_ROLLOVER_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeTimetableRolloverMarker(value: string) {
+  if (!canUseStorage()) return;
+
+  try {
+    window.localStorage.setItem(LOCAL_TIMETABLE_ROLLOVER_KEY, value);
+  } catch {
+    // Ignore storage quota issues.
+  }
+}
+
+function clearTimetableDayColumn(
+  sheets: Record<SheetKey, SheetData>,
+  columnId: (typeof timetableDayColumnIds)[number]
+) {
+  const timetable = sheets.timetable;
+  if (!timetable) return sheets;
+
+  const rows = timetable.rows.map((row) => ({
+    ...row,
+    [columnId]: columnId in row ? "" : row[columnId]
+  }));
+
+  return {
+    ...sheets,
+    timetable: {
+      ...timetable,
+      rows
+    }
+  };
+}
+
+function applyTimetableRollover(sheets: Record<SheetKey, SheetData>) {
+  const completedDate = getMostRecentlyCompletedPlannerDate(new Date());
+  const completedDateKey = formatDateKey(completedDate);
+  const storedMarker = readTimetableRolloverMarker();
+
+  if (storedMarker === completedDateKey) {
+    return { sheets, changed: false };
+  }
+
+  if (!storedMarker) {
+    writeTimetableRolloverMarker(completedDateKey);
+    return { sheets, changed: false };
+  }
+
+  const weekdayIndex = completedDate.getDay();
+  const columnId = timetableDayColumnIds[(weekdayIndex + 6) % 7];
+  const nextSheets = clearTimetableDayColumn(sheets, columnId);
+  writeTimetableRolloverMarker(completedDateKey);
+
+  return { sheets: nextSheets, changed: true };
+}
+
+function writeStoredTheme(theme: "light" | "dark") {
+  if (!canUseStorage()) return;
+
+  try {
+    window.localStorage.setItem(LOCAL_THEME_KEY, theme);
+  } catch {
+    // Ignore storage quota issues.
   }
 }
 
@@ -309,13 +420,20 @@ function ensureAllSheetsPresent(sheets: Record<SheetKey, SheetData> | null | und
     merged[k as SheetKey] = sheets[k as SheetKey];
   });
 
+  merged.timetable = normalizeTimetableSheet(merged.timetable);
+
   return merged;
 }
 
-function getNextMidnightDelay() {
+function getNextPlannerRefreshDelay() {
   const now = new Date();
   const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
-  return Math.max(nextMidnight.getTime() - now.getTime(), 1000);
+  const nextNinePmToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 21, 0, 0, 0);
+  const nextNinePm = now.getTime() < nextNinePmToday.getTime()
+    ? nextNinePmToday
+    : new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 21, 0, 0, 0);
+
+  return Math.max(Math.min(nextMidnight.getTime(), nextNinePm.getTime()) - now.getTime(), 1000);
 }
 
 function scheduleAlertRefresh(get: () => BusinessStore, set: (partial: Partial<BusinessStore>) => void) {
@@ -329,23 +447,31 @@ function scheduleAlertRefresh(get: () => BusinessStore, set: (partial: Partial<B
 
   alertRefreshTimer = setTimeout(() => {
     const current = get();
-    const syncedSheets = syncRevenueFromProjects(current.sheets);
+    const rollover = applyTimetableRollover(current.sheets);
+    const syncedSheets = syncRevenueFromProjects(rollover.sheets);
     const nextState = buildOperationalState(syncedSheets, current.readAlertIds);
 
     set({
+      sheets: nextState.sheets,
       alerts: nextState.alerts,
       readAlertIds: nextState.readAlertIds
     });
 
+    writeStoredSheets(LOCAL_CACHE_KEY, nextState.sheets);
+    if (rollover.changed) {
+      writeStoredSheets(LOCAL_PENDING_KEY, nextState.sheets);
+      queuePersist(nextState.sheets, set);
+    }
     writeStoredAlertIds(nextState.readAlertIds);
     scheduleAlertRefresh(get, set);
-  }, getNextMidnightDelay());
+  }, getNextPlannerRefreshDelay());
 }
 
 export const useBusinessStore = create<BusinessStore>((set, get) => ({
   sheets: createDefaultSheets(),
   alerts: deriveOperationalAlerts(createDefaultSheets()),
   readAlertIds: readStoredAlertIds(),
+  theme: readStoredTheme(),
   isLoaded: false,
   isSaving: false,
   error: "",
@@ -358,7 +484,8 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
 
     if (localSheets) {
       const mergedLocal = ensureAllSheetsPresent(localSheets);
-      const syncedLocalSheets = syncRevenueFromProjects(mergedLocal);
+      const rollover = applyTimetableRollover(mergedLocal);
+      const syncedLocalSheets = syncRevenueFromProjects(rollover.sheets);
       const localState = buildOperationalState(syncedLocalSheets, get().readAlertIds);
 
       set({
@@ -370,6 +497,10 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       });
 
       writeStoredAlertIds(localState.readAlertIds);
+      writeStoredSheets(LOCAL_CACHE_KEY, localState.sheets);
+      if (rollover.changed) {
+        writeStoredSheets(LOCAL_PENDING_KEY, localState.sheets);
+      }
       scheduleAlertRefresh(get, set);
     }
 
@@ -399,7 +530,8 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
 
       const payload = (await response.json()) as { sheets?: Record<SheetKey, SheetData> };
       const mergedPayload = ensureAllSheetsPresent(payload.sheets ?? createDefaultSheets());
-      const syncedSheets = syncRevenueFromProjects(mergedPayload);
+      const rollover = applyTimetableRollover(mergedPayload);
+      const syncedSheets = syncRevenueFromProjects(rollover.sheets);
       const nextState = buildOperationalState(syncedSheets, get().readAlertIds);
 
       set({
@@ -410,6 +542,9 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
         error: ""
       });
       writeStoredSheets(LOCAL_CACHE_KEY, nextState.sheets);
+      if (rollover.changed) {
+        writeStoredSheets(LOCAL_PENDING_KEY, nextState.sheets);
+      }
       writeStoredAlertIds(nextState.readAlertIds);
       scheduleAlertRefresh(get, set);
     } catch (error) {
@@ -511,6 +646,29 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     set(nextState);
     queuePersist(sheets, set);
   },
+  moveRow: (sheet, fromIndex, toIndex) => {
+    const current = get().sheets[sheet];
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= current.rows.length || toIndex >= current.rows.length) {
+      return;
+    }
+
+    const rows = [...current.rows];
+    const [moved] = rows.splice(fromIndex, 1);
+    rows.splice(toIndex, 0, moved);
+
+    const nextSheets = {
+      ...get().sheets,
+      [sheet]: {
+        ...current,
+        rows
+      }
+    };
+    const sheets = syncRevenueFromProjects(nextSheets);
+    const nextState = buildOperationalState(sheets, get().readAlertIds);
+
+    set(nextState);
+    queuePersist(sheets, set);
+  },
   addColumn: (sheet, column) => {
     const current = get().sheets[sheet];
     const rows = current.rows.map((row) => ({
@@ -549,6 +707,56 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       [sheet]: {
         columns,
         rows
+      }
+    };
+    const sheets = syncRevenueFromProjects(nextSheets);
+    const nextState = buildOperationalState(sheets, get().readAlertIds);
+
+    set(nextState);
+    queuePersist(sheets, set);
+  },
+  moveColumn: (sheet, columnId, direction) => {
+    const current = get().sheets[sheet];
+    const columnIndex = current.columns.findIndex((column) => column.id === columnId);
+
+    if (columnIndex === -1) {
+      return;
+    }
+
+    const targetIndex = direction === "left" ? columnIndex - 1 : columnIndex + 1;
+    if (targetIndex < 0 || targetIndex >= current.columns.length) {
+      return;
+    }
+
+    const columns = [...current.columns];
+    const [moved] = columns.splice(columnIndex, 1);
+    columns.splice(targetIndex, 0, moved);
+
+    const nextSheets = {
+      ...get().sheets,
+      [sheet]: {
+        ...current,
+        columns
+      }
+    };
+    const sheets = syncRevenueFromProjects(nextSheets);
+    const nextState = buildOperationalState(sheets, get().readAlertIds);
+
+    set(nextState);
+    queuePersist(sheets, set);
+  },
+  updateColumnWidth: (sheet, columnId, width) => {
+    const current = get().sheets[sheet];
+    const normalizedWidth = `${Math.round(clampNumber(width, 80, 1400))}px`;
+    const columns = current.columns.map((column) =>
+      column.id === columnId ? { ...column, width: normalizedWidth } : column
+    );
+
+    const nextSheets = {
+      ...get().sheets,
+      [sheet]: {
+        ...current,
+        columns
       }
     };
     const sheets = syncRevenueFromProjects(nextSheets);
@@ -597,6 +805,11 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
 
     set(nextState);
     queuePersist(sheets, set);
+  },
+  setTheme: (theme) => {
+    const nextTheme = theme === "dark" ? "dark" : "light";
+    writeStoredTheme(nextTheme);
+    set({ theme: nextTheme });
   },
   markAlertRead: (alertId) => {
     const { readAlertIds } = get();

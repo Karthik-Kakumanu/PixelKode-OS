@@ -42,6 +42,21 @@ const optionPresets: Partial<Record<SheetKey, Partial<Record<string, string[]>>>
   },
   services: {
     serviceName: ["Business Website", "CRM Automation", "Content Growth System", "Brand Refresh", "Lead Funnel Setup"]
+  },
+  shopping: {
+    listType: ["Company", "Personal"],
+    priority: ["Low", "Medium", "High", "Urgent"],
+    purchaseStatus: ["To Buy", "Ordered", "Bought", "Deferred"]
+  },
+  timetable: {
+    slotLabel: ["Period 1", "Period 2", "Period 3", "Lunch", "Period 4", "Period 5", "Break"],
+    monday: ["Planning", "Deep Work", "Client Meeting"],
+    tuesday: ["Follow-ups", "Content", "Review"],
+    wednesday: ["Delivery", "Testing", "Ops"],
+    thursday: ["Sales", "Proposals", "Revisions"],
+    friday: ["Finance", "Wrap-up", "Planning"],
+    saturday: ["Cleanup", "Learning", "Admin"],
+    sunday: ["Rest", "Family", "Weekly Prep"]
   }
 };
 
@@ -79,6 +94,16 @@ const statusClassMap: Record<string, string> = {
   posted: "border-emerald-300 bg-emerald-100 text-emerald-800 shadow-emerald-100/70",
   paused: "border-rose-300 bg-rose-100 text-rose-800 shadow-rose-100/70",
   onhold: "border-amber-300 bg-amber-100 text-amber-800 shadow-amber-100/70"
+  ,
+  urgent: "border-rose-300 bg-rose-100 text-rose-800 shadow-rose-100/70",
+  ordered: "border-sky-300 bg-sky-100 text-sky-800 shadow-sky-100/70",
+  bought: "border-emerald-300 bg-emerald-100 text-emerald-800 shadow-emerald-100/70",
+  deferred: "border-slate-300 bg-slate-100 text-slate-700 shadow-slate-100/70",
+  confirmed: "border-sky-300 bg-sky-100 text-sky-800 shadow-sky-100/70",
+  done: "border-emerald-300 bg-emerald-100 text-emerald-800 shadow-emerald-100/70",
+  skipped: "border-rose-300 bg-rose-100 text-rose-800 shadow-rose-100/70",
+  company: "border-cyan-300 bg-cyan-100 text-cyan-800 shadow-cyan-100/70",
+  personal: "border-amber-300 bg-amber-100 text-amber-800 shadow-amber-100/70"
 };
 
 export function getStatusClasses(value: string) {
@@ -162,6 +187,22 @@ export function getColumnIcon(columnId: string) {
     serviceName: Sparkles,
     price: CircleDollarSign,
     estimatedTimeline: Clock3,
+    itemName: FileText,
+    listType: LayoutGrid,
+    quantity: Target,
+    estimatedCost: CircleDollarSign,
+    priority: Sparkles,
+    neededBy: CalendarDays,
+    purchaseStatus: BadgeCheck,
+    slotLabel: LayoutGrid,
+    timeRange: Clock3,
+    monday: CalendarDays,
+    tuesday: CalendarDays,
+    wednesday: CalendarDays,
+    thursday: CalendarDays,
+    friday: CalendarDays,
+    saturday: CalendarDays,
+    sunday: CalendarDays,
     status: BadgeCheck,
     notes: MessageSquareQuote,
     remarks: MessageSquareQuote
@@ -178,8 +219,10 @@ export function getRequiredColumns(sheetKey: SheetKey) {
     team: ["memberName", "role", "availability"],
     content: ["contentTitle", "platform", "stage"],
     services: ["serviceName", "price", "status"],
+    shopping: ["itemName", "listType", "purchaseStatus"],
+    timetable: ["slotLabel", "timeRange", "monday"],
     servers: ["serverName", "serverRole", "projectName"],
-    databases: ["databaseName", "projectName", "adminEmail"]
+    databases: ["dbName", "projectName", "adminEmail"]
   };
 
   return required[sheetKey];
