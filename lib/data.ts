@@ -25,6 +25,15 @@ export const sheetTitles: Record<SheetKey, { title: string; description: string 
     title: "Services",
     description: "Service catalog with pricing, turnaround, delivery expectations, and proof of execution."
   }
+  ,
+  servers: {
+    title: "Servers",
+    description: "Inventory of servers with hostnames, IPs, environment, owner contact, and status."
+  },
+  databases: {
+    title: "Databases",
+    description: "Database instances and connection info with owner contact and business mappings."
+  }
 };
 
 export const defaultSheets: Record<SheetKey, SheetData> = {
@@ -327,6 +336,104 @@ export const defaultSheets: Record<SheetKey, SheetData> = {
         monthlyLeads: 10,
         status: "Core Offer",
         notes: "Pairs well with website upsells"
+      }
+    ]
+  }
+  ,
+  servers: {
+    columns: [
+      { id: "serverName", label: "Server Name", type: "text", width: "180px" },
+      { id: "ipAddress", label: "IP Address", type: "text", width: "140px" },
+      { id: "environment", label: "Environment", type: "select", options: ["Production", "Staging", "Development"], width: "140px" },
+      { id: "serverRole", label: "Role", type: "select", options: ["Web", "Application", "Database", "Cache", "Worker"], width: "130px" },
+      { id: "projectName", label: "Project Name", type: "text", width: "170px" },
+      { id: "mailServer", label: "Mail Server", type: "text", width: "170px" },
+      { id: "status", label: "Status", type: "select", options: ["Healthy", "Warning", "Down"], width: "120px" },
+      { id: "ownerEmail", label: "Owner Email", type: "text", width: "200px" },
+      { id: "businessName", label: "Business Name", type: "text", width: "180px" },
+      { id: "notes", label: "Notes", type: "textarea", width: "160px" }
+    ],
+    rows: [
+      {
+        id: "server-1",
+        serverName: "web-01",
+        ipAddress: "192.168.10.21",
+        environment: "Production",
+        serverRole: "Web",
+        projectName: "Pixelkode Website",
+        mailServer: "mail.pixelkode.com",
+        status: "Healthy",
+        ownerEmail: "ops@pixelkode.com",
+        businessName: "PixelKode",
+        notes: "Primary web server behind load balancer"
+      },
+      {
+        id: "server-2",
+        serverName: "app-01",
+        ipAddress: "192.168.10.22",
+        environment: "Production",
+        serverRole: "Application",
+        projectName: "Northline CRM",
+        mailServer: "smtp.northline.internal",
+        status: "Healthy",
+        ownerEmail: "devops@pixelkode.com",
+        businessName: "Northline",
+        notes: "Application server running Node services"
+      },
+      {
+        id: "server-3",
+        serverName: "db-01",
+        ipAddress: "192.168.10.30",
+        environment: "Production",
+        serverRole: "Database",
+        projectName: "Pixelkode Core",
+        mailServer: "",
+        status: "Healthy",
+        ownerEmail: "dba@pixelkode.com",
+        businessName: "PixelKode",
+        notes: "Primary Postgres instance"
+      }
+    ]
+  },
+  databases: {
+    columns: [
+      { id: "dbName", label: "Database Name", type: "text", width: "180px" },
+      { id: "host", label: "Host", type: "text", width: "180px" },
+      { id: "port", label: "Port", type: "number", width: "110px" },
+      { id: "engine", label: "Engine", type: "select", options: ["Postgres", "MySQL", "MongoDB", "MSSQL"], width: "130px" },
+      { id: "projectName", label: "Project Name", type: "text", width: "170px" },
+      { id: "adminEmail", label: "Admin Email", type: "text", width: "200px" },
+      { id: "connString", label: "Connection Info", type: "textarea", width: "220px" },
+      { id: "ownerEmail", label: "Owner Email", type: "text", width: "200px" },
+      { id: "businessName", label: "Business Name", type: "text", width: "180px" },
+      { id: "notes", label: "Notes", type: "textarea", width: "160px" }
+    ],
+    rows: [
+      {
+        id: "db-1",
+        dbName: "pixelkode_prod",
+        host: "db.prod.pixelkode.internal",
+        port: 5432,
+        engine: "Postgres",
+        projectName: "Pixelkode Core",
+        adminEmail: "dba@pixelkode.com",
+        connString: "postgres://readonly:***@db.prod.pixelkode.internal:5432/pixelkode_prod",
+        ownerEmail: "dba@pixelkode.com",
+        businessName: "PixelKode",
+        notes: "Production primary database"
+      },
+      {
+        id: "db-2",
+        dbName: "northline_crm",
+        host: "db.crm.northline.internal",
+        port: 3306,
+        engine: "MySQL",
+        projectName: "Northline CRM",
+        adminEmail: "dba@northline.com",
+        connString: "mysql://admin:***@db.crm.northline.internal:3306/northline_crm",
+        ownerEmail: "dba@northline.com",
+        businessName: "Northline",
+        notes: "CRM database for Northline project"
       }
     ]
   }

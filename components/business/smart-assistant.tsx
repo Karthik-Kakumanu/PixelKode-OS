@@ -1,16 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowRight,
   Bot,
-  Columns3,
-  FilePenLine,
+  CheckCircle2,
+  Mic,
+  MicOff,
   MessageSquare,
-  Plus,
   Send,
   Sparkles,
-  TableProperties,
+  Volume2,
+  VolumeX,
   WandSparkles,
   X
 } from "lucide-react";
@@ -21,9 +21,10 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { getColumnOptions, getPrimaryColumn, getRequiredColumns, normalizeToken } from "@/lib/sheet-ui";
 import { useBusinessStore } from "@/lib/store";
-import type { CellValue, ColumnType, SheetColumn, SheetData, SheetKey, SheetRow } from "@/lib/types";
+import type { CellValue, ColumnType, OperationAlert, SheetColumn, SheetData, SheetKey } from "@/lib/types";
+import { cn, formatCurrency } from "@/lib/utils";
 
-const sheetKeys: SheetKey[] = ["projects", "leads", "revenue", "team", "content", "services"];
+const sheetKeys: SheetKey[] = ["projects", "leads", "revenue", "team", "content", "services", "servers", "databases"];
 
 const labelAliases: Partial<Record<SheetKey, Partial<Record<string, string[]>>>> = {
   projects: {
@@ -39,7 +40,6 @@ const labelAliases: Partial<Record<SheetKey, Partial<Record<string, string[]>>>>
     notes: ["notes", "note"]
   },
   leads: {
-    businessName: ["business", "company", "business name", "name"],
     contactName: ["contact", "contact name", "person"],
     expectedValue: ["value", "expected value", "budget"],
     callStatus: ["call", "call status"],
@@ -76,7 +76,45 @@ const labelAliases: Partial<Record<SheetKey, Partial<Record<string, string[]>>>>
     status: ["status"],
     estimatedTimeline: ["timeline", "eta"],
     notes: ["notes", "note"]
+  },
+  servers: {
+    serverName: ["server", "hostname", "server name"],
+    ipAddress: ["ip", "ip address", "ipv4"],
+    environment: ["env", "environment"],
+    status: ["status"],
+    ownerEmail: ["owner", "owner email", "email"],
+    businessName: ["business", "company", "business name"],
+    notes: ["notes", "note"]
+  },
+  databases: {
+    dbName: ["database", "db", "database name"],
+    host: ["host", "hostname"],
+    port: ["port"],
+    engine: ["engine", "type"],
+    ownerEmail: ["owner", "owner email", "email"],
+    businessName: ["business", "company", "business name"],
+    notes: ["notes", "note"]
   }
+};
+
+labelAliases.servers = {
+  serverName: ["server", "hostname", "server name"],
+  ipAddress: ["ip", "ip address", "ipv4"],
+  environment: ["env", "environment"],
+  status: ["status"],
+  ownerEmail: ["owner", "owner email", "email"],
+  businessName: ["business", "company", "business name"],
+  notes: ["notes", "note"]
+};
+
+labelAliases.databases = {
+  dbName: ["database", "db", "database name"],
+  host: ["host", "hostname"],
+  port: ["port"],
+  engine: ["engine", "type"],
+  ownerEmail: ["owner", "owner email", "email"],
+  businessName: ["business", "company", "business name"],
+  notes: ["notes", "note"]
 };
 
 const singularLabel: Record<SheetKey, string> = {
@@ -85,18 +123,86 @@ const singularLabel: Record<SheetKey, string> = {
   revenue: "revenue entry",
   team: "team member",
   content: "content item",
-  services: "service"
+  services: "service",
+  servers: "server",
+  databases: "database"
 };
 
-type AssistantIntent = "add-row" | "edit-row" | "add-column" | "delete-row";
+singularLabel.servers = "server";
+singularLabel.databases = "database";
+
+type AssistantIntent =
+  | "count"
+  | "summary"
+  | "pending-amount"
+  | "pending-projects"
+  | "attention-today"
+  | "weekly-earnings"
+  | "cash-flow-blockers"
+  | "financial-query"
+  | "show-overdue"
+  | "search"
+  | "add-column"
+  | "delete-row"
+  | "edit-row"
+  | "add-row"
+  | "greeting"
+  | "smalltalk"
+  | "generate-ideas";
+  
+
+type ChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+};
+
+type SpeechRecognitionLike = {
+  start: () => void;
+  stop: () => void;
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
+  onend: (() => void) | null;
+};
+
+declare global {
+  interface Window {
+    SpeechRecognition?: new () => SpeechRecognitionLike;
+    webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+  }
+}
+
+function buildMessage(role: ChatMessage["role"], content: string): ChatMessage {
+  return {
+    id: `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    role,
+    content
+  };
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 function inferSheetKey(pathname: string): SheetKey | null {
   const segment = pathname.split("/")[1];
   return sheetKeys.includes(segment as SheetKey) ? (segment as SheetKey) : null;
 }
 
-function detectSheetKey(prompt: string, pathname: string): SheetKey | null {
+function detectSheetKey(prompt: string, pathname: string) {
   const lowerPrompt = prompt.toLowerCase();
+  const aliasMap: Array<{ sheetKey: SheetKey; aliases: string[] }> = [
+    { sheetKey: "projects", aliases: ["project", "projects"] },
+    { sheetKey: "leads", aliases: ["lead", "leads"] },
+    { sheetKey: "revenue", aliases: ["revenue", "finance", "payment", "payments"] },
+    { sheetKey: "team", aliases: ["team", "employee", "employees", "member", "members", "staff"] },
+    { sheetKey: "content", aliases: ["content", "post", "posts"] },
+    { sheetKey: "services", aliases: ["service", "services", "offer", "offers"] }
+  ];
+
   const explicitMatch = sheetKeys.find(
     (sheetKey) =>
       lowerPrompt.includes(`${sheetKey} page`) ||
@@ -105,32 +211,111 @@ function detectSheetKey(prompt: string, pathname: string): SheetKey | null {
       lowerPrompt.startsWith(sheetKey)
   );
 
-  return explicitMatch ?? inferSheetKey(pathname);
-}
-
-function detectIntent(prompt: string): AssistantIntent {
-  const lowerPrompt = prompt.toLowerCase();
-
-  if (
-    lowerPrompt.includes("delete ") ||
-    lowerPrompt.includes("remove ") ||
-    lowerPrompt.includes("delete last") ||
-    lowerPrompt.includes("remove last")
-  ) {
-    return "delete-row";
+  if (explicitMatch) {
+    return explicitMatch;
   }
 
-  if (lowerPrompt.includes("add column") || lowerPrompt.includes("new column") || lowerPrompt.includes("create column")) {
+  const aliasMatch = aliasMap.find(({ aliases }) =>
+    aliases.some((alias) => new RegExp(`\\b${escapeRegExp(alias)}\\b`, "i").test(lowerPrompt))
+  );
+
+  return aliasMatch?.sheetKey ?? inferSheetKey(pathname);
+}
+
+function detectIntent(prompt: string): AssistantIntent | "today-followups" {
+  const lowerPrompt = prompt.toLowerCase();
+  // Greetings and small talk
+  if (/\b(hello|hi|hey|good morning|good afternoon|good evening)\b/i.test(lowerPrompt)) {
+    return "greeting";
+  }
+  if (/\b(how are you|what's up|how's it going|how do you do|what can you do|who are you|who made you|your name)\b/i.test(lowerPrompt)) {
+    return "smalltalk";
+  }
+
+  if (/\b(how many|number of|count)\b/i.test(lowerPrompt) && !/\b(delete|remove)\b/i.test(lowerPrompt)) {
+    return "count";
+  }
+
+  if (/\b(summary|summarize|overview|current status|current state)\b/i.test(lowerPrompt)) {
+    return "summary";
+  }
+
+  if (
+    /\b(pending amount|pending balance|outstanding amount|amount due|remaining amount|how much .*pending|how much .*outstanding|what is the pending amount|what's the pending amount|how much do i still have to get|still have to get)\b/i.test(
+      lowerPrompt
+    )
+  ) {
+    return "pending-amount";
+  }
+
+  if (
+    /\b(those projects|those\s+\d+\s+projects|those two projects|which projects|what projects|what are those projects|what are those\s+\d+\s+projects|what are those two projects|can you say me|tell me those projects|show me those projects|pending projects|open projects|projects pending|which ones are pending)\b/i.test(
+      lowerPrompt
+    )
+  ) {
+    return "pending-projects";
+  }
+
+  if (
+    /\b(what needs attention today|needs attention today|attention today|show me what needs attention today|what should i do today|urgent today|today's attention)\b/i.test(
+      lowerPrompt
+    )
+  ) {
+    return "attention-today";
+  }
+
+  if (
+    /\b(what did we earn this week|what did we earn|earn this week|this week earnings|weekly earnings|revenue this week|sales this week|income this week)\b/i.test(
+      lowerPrompt
+    )
+  ) {
+    return "weekly-earnings";
+  }
+
+  if (
+    /\b(which projects are blocking cash flow|cash flow blockers|blocking cash flow|what is blocking cash flow|projects blocking cash flow|cashflow blockers|payment blockers)\b/i.test(
+      lowerPrompt
+    )
+  ) {
+    return "cash-flow-blockers";
+  }
+
+  if (
+    /\b(revenue|income|expense|expenses|profit|profitability|money|cash|collection|collect|collecting|amount due|outstanding|pending amount|left to collect|how much is left to collect|how much is collected|money picture|finance snapshot|cash status|cash situation)\b/i.test(
+      lowerPrompt
+    )
+  ) {
+    return "financial-query";
+  }
+
+  if (lowerPrompt.includes("show overdue") || lowerPrompt.includes("overdue tasks")) {
+    return "show-overdue";
+  }
+
+  if (/follow[- ]?ups? (today|for today|due today|today's)/i.test(lowerPrompt) ||
+      /any follow[- ]?ups today/i.test(lowerPrompt) ||
+      /today.*follow[- ]?ups?/i.test(lowerPrompt) ||
+      /follow[- ]?ups? due today/i.test(lowerPrompt)) {
+    return "today-followups";
+  }
+
+  if (lowerPrompt.startsWith("search ") || lowerPrompt.includes("search records")) {
+    return "search";
+  }
+
+  if (/\b(content ideas|content idea|give me some content|suggest content|suggest (?:some )?content|content suggestions|content ideas)\b/i.test(lowerPrompt)) {
+    return "generate-ideas";
+  }
+
+  if (/\b(add column|new column|create column)\b/i.test(lowerPrompt)) {
     return "add-column";
   }
 
-  if (
-    lowerPrompt.includes("edit ") ||
-    lowerPrompt.includes("update ") ||
-    lowerPrompt.includes("change ") ||
-    lowerPrompt.includes("set ") ||
-    lowerPrompt.includes("mark ")
-  ) {
+  if (/\b(delete|remove)\b/i.test(lowerPrompt)) {
+    return "delete-row";
+  }
+
+  if (/\b(edit|update|change|set|mark)\b/i.test(lowerPrompt)) {
     return "edit-row";
   }
 
@@ -138,9 +323,28 @@ function detectIntent(prompt: string): AssistantIntent {
 }
 
 function extractDeleteCount(prompt: string) {
-  const match = prompt.match(/(?:delete|remove)\s+(?:the\s+)?last\s+(\d+)\s+rows?/i);
-  if (match?.[1]) {
-    return Math.max(1, Number(match[1]));
+  const numericMatch = prompt.match(/(?:delete|remove)\s+(?:the\s+)?last\s+(\d+)\s+rows?/i);
+  if (numericMatch?.[1]) {
+    return Math.max(1, Number(numericMatch[1]));
+  }
+
+  const wordMatch = prompt.match(/(?:delete|remove)\s+(?:the\s+)?last\s+([a-z]+)\s+rows?/i);
+  if (wordMatch?.[1]) {
+    const wordToNumber: Record<string, number> = {
+      one: 1,
+      two: 2,
+      three: 3,
+      four: 4,
+      five: 5,
+      six: 6,
+      seven: 7,
+      eight: 8,
+      nine: 9,
+      ten: 10
+    };
+
+    const parsed = wordToNumber[wordMatch[1].toLowerCase()];
+    if (parsed) return parsed;
   }
 
   if (/(?:delete|remove)\s+(?:the\s+)?last\s+row/i.test(prompt)) {
@@ -160,15 +364,7 @@ function castAssistantValue(column: SheetColumn, rawValue: string): CellValue {
 }
 
 function cleanExtractedValue(value: string) {
-  return value
-    .replace(/^["']|["']$/g, "")
-    .replace(/^(?:named|called|naming)\s+/i, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return value.replace(/^["']|["']$/g, "").replace(/^(?:named|called|naming)\s+/i, "").replace(/\s+/g, " ").trim();
 }
 
 function matchColumnOption(sheetKey: SheetKey, column: SheetColumn, rawValue: string) {
@@ -187,9 +383,7 @@ function matchColumnOption(sheetKey: SheetKey, column: SheetColumn, rawValue: st
 function setDraftValue(sheetKey: SheetKey, column: SheetColumn, rawValue: string, values: Record<string, CellValue>) {
   const trimmed = cleanExtractedValue(rawValue);
   if (!trimmed) return;
-
-  const matchedOption = matchColumnOption(sheetKey, column, trimmed);
-  values[column.id] = matchedOption ?? castAssistantValue(column, trimmed);
+  values[column.id] = matchColumnOption(sheetKey, column, trimmed) ?? castAssistantValue(column, trimmed);
 }
 
 function applyLooseOptionMatches(prompt: string, sheetKey: SheetKey, columns: SheetColumn[], values: Record<string, CellValue>) {
@@ -197,11 +391,8 @@ function applyLooseOptionMatches(prompt: string, sheetKey: SheetKey, columns: Sh
 
   columns.forEach((column) => {
     if (values[column.id] !== undefined) return;
-
     const matchedOption = getColumnOptions(sheetKey, column).find((option) => {
       const normalizedOption = normalizeToken(option);
-      if (!normalizedOption) return false;
-
       return lowerPrompt.includes(option.toLowerCase()) || lowerPrompt.includes(normalizedOption);
     });
 
@@ -225,7 +416,6 @@ function inferLikelyStatusColumn(sheetKey: SheetKey, columns: SheetColumn[], pro
   for (const columnId of preferredColumns[sheetKey] ?? []) {
     const column = columns.find((item) => item.id === columnId);
     if (!column) continue;
-
     const match = getColumnOptions(sheetKey, column).find((option) => {
       const normalizedOption = normalizeToken(option);
       return lowerPrompt.includes(option.toLowerCase()) || lowerPrompt.includes(normalizedOption);
@@ -265,20 +455,20 @@ function extractFromPrompt(
       for (const pattern of patterns) {
         const match = prompt.match(pattern);
         if (!match?.[1]) continue;
-
         setDraftValue(sheetKey, column, match[1], nextValues);
         return;
       }
     }
 
-    const options = getColumnOptions(sheetKey, column);
-    const matchedOption = options.find((option) => lowerPrompt.includes(option.toLowerCase()));
+    const matchedOption = getColumnOptions(sheetKey, column).find((option) => lowerPrompt.includes(option.toLowerCase()));
     if (matchedOption) {
       nextValues[column.id] = matchedOption;
     }
   });
 
-  const primaryColumn = columns.find((column) => column.id === getPrimaryColumn(sheetKey));
+  const primaryColumnId = getPrimaryColumn(sheetKey);
+  const primaryColumn = columns.find((column) => column.id === primaryColumnId);
+
   if (primaryColumn && !nextValues[primaryColumn.id]) {
     const namePatterns = [
       /(?:named|called)\s+([^,.;\n]+?)(?=\s+(?:with|and)\s+[a-z]|[,.;\n]|$)/i,
@@ -290,7 +480,6 @@ function extractFromPrompt(
     for (const pattern of namePatterns) {
       const nameMatch = prompt.match(pattern);
       if (!nameMatch?.[1]) continue;
-
       const value = cleanExtractedValue(nameMatch[1]).split(/\bwith\b/i)[0].trim();
       if (value) {
         nextValues[primaryColumn.id] = value;
@@ -311,25 +500,18 @@ function shouldKeepRemainingFieldsEmpty(prompt: string) {
 }
 
 function shouldUseLiteralMode(prompt: string) {
-  return (
-    shouldKeepRemainingFieldsEmpty(prompt) ||
-    /\b(?:exactly|strictly|only|just)\b/i.test(prompt) ||
-    /(?:do not|don't)\s+(?:change|fill|set|touch|update|guess)/i.test(prompt)
-  );
+  return shouldKeepRemainingFieldsEmpty(prompt) || /\b(?:exactly|strictly|only|just)\b/i.test(prompt) || /(?:do not|don't)\s+(?:change|fill|set|touch|update|guess)/i.test(prompt);
 }
 
 function missingColumns(sheetKey: SheetKey, columns: SheetColumn[], values: Record<string, CellValue>) {
   const required = new Set(getRequiredColumns(sheetKey));
-  return columns.filter((column) => {
-    if (!required.has(column.id)) return false;
-    const value = values[column.id];
-    return value === undefined || value === "" || value === 0;
-  });
+  return columns.filter((column) => required.has(column.id) && (values[column.id] === undefined || values[column.id] === "" || values[column.id] === 0));
 }
 
 function findBestRowMatch(prompt: string, sheetKey: SheetKey, sheet: SheetData) {
   const lowerPrompt = prompt.toLowerCase();
   const primaryColumnId = getPrimaryColumn(sheetKey);
+
   const rankedRows = sheet.rows
     .map((row, rowIndex) => {
       const primaryValue = String(row[primaryColumnId] ?? "").trim();
@@ -362,26 +544,236 @@ function detectColumnType(prompt: string): ColumnType {
   return "text";
 }
 
-function getEmptyRequiredColumns(sheetKey: SheetKey, columns: SheetColumn[], values: Record<string, CellValue>) {
-  return missingColumns(sheetKey, columns, values).filter((column) => column.id !== getPrimaryColumn(sheetKey));
+function formatCountReply(sheetKey: SheetKey, sheet: SheetData) {
+  const count = sheet.rows.length;
+  const noun = count === 1 ? singularLabel[sheetKey] : `${singularLabel[sheetKey]}s`;
+  return `I found ${count} ${noun}${count === 1 ? "" : "s"} in ${sheetKey}.`;
 }
 
-function extractColumnName(prompt: string) {
-  const match = prompt.match(/(?:add|create)\s+(?:a\s+)?column(?:\s+called|\s+named)?\s+([a-z0-9 _-]+)/i);
-  return match?.[1]?.trim() ?? "";
+function formatSummaryReply(sheetKey: SheetKey, sheet: SheetData) {
+  const count = sheet.rows.length;
+  if (count === 0) {
+    return `I don't see any ${sheetKey} data yet.`;
+  }
+
+  const primaryColumnId = getPrimaryColumn(sheetKey);
+  const preview = sheet.rows
+    .slice(0, 3)
+    .map((row) => String(row[primaryColumnId] ?? singularLabel[sheetKey]))
+    .filter(Boolean)
+    .join(", ");
+
+  const noun = count === 1 ? singularLabel[sheetKey] : `${singularLabel[sheetKey]}s`;
+  return `Here's a quick look at ${sheetKey}: ${count} ${noun}${count === 1 ? "" : "s"}, with ${preview} near the top.`;
 }
 
-function toColumnId(label: string) {
-  return label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+function formatPendingAmountReply(sheetKey: SheetKey, sheet: SheetData) {
+  if (sheetKey !== "projects") {
+    return `That one lives in projects. Ask me about projects and I'll show the outstanding total.`;
+  }
+
+  const projectRows = sheet.rows;
+  if (projectRows.length === 0) {
+    return "There are no projects yet, so nothing is pending right now.";
+  }
+
+  const totalPending = projectRows.reduce((sum, row) => sum + Number(row.pendingAmount ?? 0), 0);
+  const openProjects = projectRows.filter((row) => Number(row.pendingAmount ?? 0) > 0).length;
+
+  return `You still have ${formatCurrency(totalPending)} left to collect across ${openProjects} project${openProjects === 1 ? "" : "s"}.`;
 }
 
-function previewText(values: Record<string, CellValue>, columns: SheetColumn[]) {
-  return columns.filter((column) => values[column.id] !== undefined && values[column.id] !== "");
+function formatPendingProjectsReply(sheets: Record<SheetKey, SheetData>) {
+  const projects = sheets.projects?.rows ?? [];
+  const pendingProjects = projects
+    .filter((row) => Number(row.pendingAmount ?? 0) > 0)
+    .sort((left, right) => Number(right.pendingAmount ?? 0) - Number(left.pendingAmount ?? 0));
+
+  if (pendingProjects.length === 0) {
+    return "Nothing is pending in projects right now.";
+  }
+
+  const breakdown = pendingProjects.slice(0, 5).map((project, index) => {
+    const projectName = String(project.projectName ?? `Project ${index + 1}`);
+    const clientName = String(project.clientName ?? "");
+    const pendingAmount = Number(project.pendingAmount ?? 0);
+    const projectValue = Number(project.projectValue ?? 0);
+    const suffix = clientName ? ` (${clientName})` : "";
+    return `${index + 1}. ${projectName}${suffix} — ${formatCurrency(pendingAmount)} pending out of ${formatCurrency(projectValue)}`;
+  }).join("\n");
+
+  return [
+    "Yep — these are the projects still waiting on payment:",
+    breakdown,
+    "If you want, I can also tell you which one is the biggest blocker first."
+  ].join("\n\n");
+}
+
+function formatFinancialReply(sheets: Record<SheetKey, SheetData>) {
+  const revenueRows = sheets.revenue?.rows ?? [];
+  const projectRows = sheets.projects?.rows ?? [];
+
+  const collectedRevenue = revenueRows
+    .filter((row) => String(row.entryType ?? "").toLowerCase() === "income")
+    .reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
+
+  const expenses = revenueRows
+    .filter((row) => ["expense", "payroll", "personal use"].includes(String(row.entryType ?? "").toLowerCase()))
+    .reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
+
+  const pendingCollection = projectRows.reduce((sum, row) => sum + Number(row.pendingAmount ?? 0), 0);
+  const openProjects = projectRows
+    .filter((row) => Number(row.pendingAmount ?? 0) > 0)
+    .sort((left, right) => Number(right.pendingAmount ?? 0) - Number(left.pendingAmount ?? 0))
+    .slice(0, 5);
+
+  const netProfit = collectedRevenue - expenses;
+
+  const breakdown = openProjects.length
+    ? openProjects
+        .map((project, index) => {
+          const projectName = String(project.projectName ?? project.clientName ?? `Project ${index + 1}`);
+          const clientName = String(project.clientName ?? "");
+          const projectValue = Number(project.projectValue ?? 0);
+          const pendingAmount = Number(project.pendingAmount ?? 0);
+          const suffix = clientName ? ` (${clientName})` : "";
+          return `${index + 1}. ${projectName}${suffix} — pending ${formatCurrency(pendingAmount)} of ${formatCurrency(projectValue)}`;
+        })
+        .join("\n")
+    : "No projects are waiting on payment right now.";
+
+  return [
+    "Here’s the money picture from your live data:",
+    `Income in: ${formatCurrency(collectedRevenue)}`,
+    `Outflow: ${formatCurrency(expenses)}`,
+    `Net profit: ${formatCurrency(netProfit)}`,
+    `Still to collect: ${formatCurrency(pendingCollection)} across ${openProjects.length} project${openProjects.length === 1 ? "" : "s"}.`,
+    `Project breakdown:\n${breakdown}`
+  ].join("\n");
+}
+
+function getStartOfWeek(date = new Date()) {
+  const start = new Date(date);
+  const day = start.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  start.setDate(start.getDate() + diff);
+  start.setHours(0, 0, 0, 0);
+  return start;
+}
+
+function formatAttentionReply(sheets: Record<SheetKey, SheetData>, alerts: OperationAlert[]) {
+  const leads = sheets.leads?.rows ?? [];
+  const projects = sheets.projects?.rows ?? [];
+  const today = new Date();
+
+  const todaysFollowUps = leads.filter((row) => {
+    if (!row.followUpDate) return false;
+    const date = new Date(String(row.followUpDate));
+    return date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth() && date.getDate() === today.getDate();
+  });
+
+  const overdueProjects = projects
+    .filter((row) => String(row.projectStatus ?? "") !== "Completed" && row.deliveryDate && new Date(String(row.deliveryDate)) < today)
+    .slice(0, 5);
+
+  const unreadAlerts = alerts.slice(0, 5);
+
+  const followUpText = todaysFollowUps.length
+    ? todaysFollowUps
+        .map((lead, index) => `${index + 1}. ${String(lead.businessName ?? lead.contactName ?? "Lead")} — ${String(lead.leadStatus ?? lead.callStatus ?? "Follow up")}`)
+        .join("\n")
+    : "Nothing is due today. Nice and clear.";
+
+  const projectText = overdueProjects.length
+    ? overdueProjects
+        .map((project, index) => `${index + 1}. ${String(project.projectName ?? "Project")} — due ${String(project.deliveryDate ?? "unknown")}`)
+        .join("\n")
+    : "No overdue projects are slowing you down today.";
+
+  const alertText = unreadAlerts.length
+    ? unreadAlerts.map((alert, index) => `${index + 1}. ${alert.title} — ${alert.message}`).join("\n")
+    : "No urgent alerts right now.";
+
+  return [
+    "Here’s what I’d tackle first today:",
+    `Follow-ups today:\n${followUpText}`,
+    `Projects that need attention:\n${projectText}`,
+    `Operational alerts:\n${alertText}`
+  ].join("\n\n");
+}
+
+function formatWeeklyEarningsReply(sheets: Record<SheetKey, SheetData>) {
+  const revenueRows = sheets.revenue?.rows ?? [];
+  const projectRows = sheets.projects?.rows ?? [];
+  const startOfWeek = getStartOfWeek();
+  const endOfWeek = new Date();
+
+  const weekIncomeRows = revenueRows.filter((row) => {
+    const entryType = String(row.entryType ?? "").toLowerCase();
+    const dateText = String(row.entryDate ?? "");
+    if (entryType !== "income" || !dateText) return false;
+    const date = new Date(dateText);
+    return date >= startOfWeek && date <= endOfWeek;
+  });
+
+  const weeklyIncome = weekIncomeRows.reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
+  const weeklyProjectReceipts = projectRows.reduce((sum, row) => sum + Number(row.amountReceived ?? 0), 0);
+
+  const topEntries = weekIncomeRows
+    .slice()
+    .sort((left, right) => Number(right.amount ?? 0) - Number(left.amount ?? 0))
+    .slice(0, 5)
+    .map((row, index) => `${index + 1}. ${String(row.sourceName ?? row.entryDate ?? "Income")} — ${formatCurrency(Number(row.amount ?? 0))}`)
+    .join("\n");
+
+  return [
+    `So far this week, revenue in is ${formatCurrency(weeklyIncome)}.`,
+    `Projects have brought in ${formatCurrency(weeklyProjectReceipts)} overall.`,
+    topEntries ? `Top income entries this week:\n${topEntries}` : "No income entries were recorded this week yet."
+  ].join("\n\n");
+}
+
+function formatCashFlowBlockersReply(sheets: Record<SheetKey, SheetData>) {
+  const projects = sheets.projects?.rows ?? [];
+
+  const blockers = projects
+    .filter((row) => Number(row.pendingAmount ?? 0) > 0 || String(row.projectStatus ?? "") !== "Completed")
+    .sort((left, right) => Number(right.pendingAmount ?? 0) - Number(left.pendingAmount ?? 0))
+    .slice(0, 6);
+
+  if (blockers.length === 0) {
+    return "Nothing is blocking cash flow right now.";
+  }
+
+  const blockerText = blockers
+    .map((project, index) => {
+      const projectName = String(project.projectName ?? "Project");
+      const clientName = String(project.clientName ?? "");
+      const pendingAmount = Number(project.pendingAmount ?? 0);
+      const projectValue = Number(project.projectValue ?? 0);
+      const dueDate = String(project.deliveryDate ?? "");
+      const suffix = clientName ? ` (${clientName})` : "";
+      const dateSuffix = dueDate ? ` | due ${dueDate}` : "";
+      return `${index + 1}. ${projectName}${suffix} — pending ${formatCurrency(pendingAmount)} of ${formatCurrency(projectValue)}${dateSuffix}`;
+    })
+    .join("\n");
+
+  return [
+    "These are the main cash-flow blockers right now:",
+    blockerText,
+    "If you want the fastest win, collect the pending amounts and close the overdue deliveries first."
+  ].join("\n\n");
+}
+
+function formatOverdueDate(value: unknown) {
+  const text = String(value ?? "").trim();
+  return text || "No date";
 }
 
 export function SmartAssistant() {
   const pathname = usePathname();
   const sheets = useBusinessStore((state) => state.sheets);
+  const alerts = useBusinessStore((state) => state.alerts);
   const addRowWithValues = useBusinessStore((state) => state.addRowWithValues);
   const addColumn = useBusinessStore((state) => state.addColumn);
   const deleteRow = useBusinessStore((state) => state.deleteRow);
@@ -391,101 +783,344 @@ export function SmartAssistant() {
   const [prompt, setPrompt] = useState("");
   const [draft, setDraft] = useState<Record<string, CellValue>>({});
   const [activeSheetKey, setActiveSheetKey] = useState<SheetKey | null>(inferSheetKey(pathname) ?? "projects");
-  const [messages, setMessages] = useState<string[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    buildMessage(
+      "assistant",
+      "I'm your voice-enabled operations assistant. Ask me normal questions like a chat, and I'll answer directly or execute commands when needed."
+    )
+  ]);
+  const [isListening, setIsListening] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState("");
+  const [voiceRepliesEnabled, setVoiceRepliesEnabled] = useState(true);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      if (!voiceRepliesEnabled) {
+        window.speechSynthesis.cancel();
+      }
+    }
+  }, [voiceRepliesEnabled]);
+
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const acceptVoiceTranscriptRef = useRef(false);
 
   const currentSheetKey = activeSheetKey ?? inferSheetKey(pathname) ?? "projects";
   const currentSheet = sheets[currentSheetKey];
 
-  const previewColumns = useMemo(() => {
-    return currentSheet ? previewText(draft, currentSheet.columns) : [];
-  }, [currentSheet, draft]);
+  const previewColumns = useMemo(
+    () => (currentSheet ? currentSheet.columns.filter((column) => draft[column.id] !== undefined && draft[column.id] !== "") : []),
+    [currentSheet, draft]
+  );
 
-  const missing = useMemo(() => {
-    if (!currentSheet) return [];
-    return getEmptyRequiredColumns(currentSheetKey, currentSheet.columns, draft);
-  }, [currentSheet, currentSheetKey, draft]);
+  function pushMessage(role: ChatMessage["role"], content: string) {
+    setMessages((current) => [...current, buildMessage(role, content)]);
+  }
+
+  function speak(text: string) {
+    if (!voiceRepliesEnabled || typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "en-IN";
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function reply(text: string) {
+    pushMessage("assistant", text);
+    speak(text);
+  }
+
+  function startListening() {
+    if (typeof window === "undefined") return;
+    const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+
+    if (!Recognition) {
+      reply("Speech recognition is not available in this browser. You can still type here, or we can wire this to OpenAI speech APIs next.");
+      return;
+    }
+
+    if (!recognitionRef.current) {
+      const recognition = new Recognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = "en-IN";
+      recognition.onresult = (event) => {
+        if (!acceptVoiceTranscriptRef.current) return;
+        const transcript = Array.from(event.results)
+          .map((result) => result[0]?.transcript ?? "")
+          .join(" ")
+          .trim();
+        setLiveTranscript(transcript);
+        setPrompt(transcript);
+      };
+      recognition.onerror = (event) => {
+        setIsListening(false);
+        reply(`I hit a voice input issue${event.error ? `: ${event.error}` : ""}. Try again or type your message.`);
+      };
+      recognition.onend = () => {
+        setIsListening(false);
+        setPrompt("");
+        setLiveTranscript("");
+        acceptVoiceTranscriptRef.current = false;
+      };
+      recognitionRef.current = recognition;
+    }
+
+    setLiveTranscript("");
+    acceptVoiceTranscriptRef.current = true;
+    setIsListening(true);
+    recognitionRef.current.start();
+  }
+
+  function stopListening() {
+    acceptVoiceTranscriptRef.current = false;
+    recognitionRef.current?.stop();
+    setIsListening(false);
+  }
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, liveTranscript, open]);
+
+  useEffect(() => {
+    const handleAssistantPrompt = (event: Event) => {
+      const customEvent = event as CustomEvent<{ prompt?: string }>;
+      if (!customEvent.detail?.prompt) return;
+      setOpen(true);
+      setPrompt(customEvent.detail.prompt);
+    };
+
+    window.addEventListener("ops-assistant:prompt", handleAssistantPrompt as EventListener);
+    return () => window.removeEventListener("ops-assistant:prompt", handleAssistantPrompt as EventListener);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
+
 
   const executePrompt = () => {
     const trimmed = prompt.trim();
     if (!trimmed) return;
 
-    const targetSheetKey =
-      detectSheetKey(trimmed, pathname) ??
-      activeSheetKey ??
-      inferSheetKey(pathname) ??
-      "projects";
-    const targetSheet = targetSheetKey ? sheets[targetSheetKey] : null;
+    if (isListening) {
+      stopListening();
+    }
 
-    if (!targetSheetKey || !targetSheet) {
-      setMessages((current) => [...current, "I could not find that page target. Try saying projects, leads, revenue, team, content, or services."]);
-      setPrompt("");
+    acceptVoiceTranscriptRef.current = false;
+    pushMessage("user", trimmed);
+    setPrompt("");
+    setLiveTranscript("");
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
+
+    const targetSheetKey = detectSheetKey(trimmed, pathname) ?? activeSheetKey ?? inferSheetKey(pathname) ?? "projects";
+    const targetSheet = sheets[targetSheetKey];
+
+    if (!targetSheet) {
+      reply("I couldn't find that section. Try projects, leads, revenue, team, content, services, servers, or databases.");
       return;
     }
 
     setActiveSheetKey(targetSheetKey);
 
+
     const intent = detectIntent(trimmed);
 
-    if (intent === "add-column") {
-      const columnLabel = extractColumnName(trimmed);
-      if (!columnLabel) {
-        setMessages((current) => [...current, `Tell me the new column name for ${targetSheetKey}. Example: add column called priority type text in ${targetSheetKey} page.`]);
-        setPrompt("");
+    if (intent === "greeting") {
+      reply("Hey — what are we looking at today?");
+      return;
+    }
+
+    if (intent === "smalltalk") {
+      reply("I'm here with you — ask me about your business data, tasks, or just chat naturally and I'll help if I can.");
+      return;
+    }
+
+    if (intent === "today-followups") {
+      // Find today's follow-ups in leads
+      const leads = sheets.leads?.rows ?? [];
+      const today = new Date();
+      const todaysFollowUps = leads.filter((row) => {
+        if (!row.followUpDate) return false;
+        const date = new Date(String(row.followUpDate));
+        return (
+          date.getFullYear() === today.getFullYear() &&
+          date.getMonth() === today.getMonth() &&
+          date.getDate() === today.getDate()
+        );
+      });
+      if (todaysFollowUps.length === 0) {
+        reply("You're clear on follow-ups today.");
+      } else {
+        reply(
+          `Here are today's follow-ups:\n` +
+          todaysFollowUps.map((lead, idx) =>
+            `${idx + 1}. ${lead.businessName || lead.contactName || 'Lead'}${lead.notes ? ` - ${lead.notes}` : ''}`
+          ).join("\n")
+        );
+      }
+      return;
+    }
+
+    if (intent === "generate-ideas") {
+      const contentRows = sheets.content?.rows ?? [];
+      const seeds = contentRows.map((r) => String(r.contentTitle ?? "")).filter(Boolean).slice(0, 6);
+      const ideas: string[] = [];
+
+      if (seeds.length > 0) {
+        seeds.forEach((seed, idx) => {
+          ideas.push(`${seed} — A short how-to or case-study style post about ${seed}`);
+          ideas.push(`${seed} — Top tips and common mistakes related to ${seed}`);
+        });
+      } else {
+        ideas.push("5 Tips to improve your service delivery");
+        ideas.push("Case study: How we helped a client increase revenue");
+        ideas.push("Behind the scenes: Building a project from start to finish");
+        ideas.push("Top tools we use for project management and why");
+        ideas.push("Customer success story template for social posts");
+      }
+
+      const replyText = `Here are some content ideas:\n${ideas.slice(0, 6).map((it, i) => `${i + 1}. ${it}`).join("\n")}`;
+      reply(replyText);
+      return;
+    }
+
+    if (intent === "count") {
+      reply(formatCountReply(targetSheetKey, targetSheet));
+      return;
+    }
+
+    if (intent === "summary") {
+      reply(formatSummaryReply(targetSheetKey, targetSheet));
+      return;
+    }
+
+    if (intent === "pending-amount") {
+      reply(formatPendingAmountReply(targetSheetKey, targetSheet));
+      return;
+    }
+
+    if (intent === "pending-projects") {
+      reply(formatPendingProjectsReply(sheets));
+      return;
+    }
+
+    if (intent === "financial-query") {
+      reply(formatFinancialReply(sheets));
+      return;
+    }
+
+    if (intent === "attention-today") {
+      reply(formatAttentionReply(sheets, alerts));
+      return;
+    }
+
+    if (intent === "weekly-earnings") {
+      reply(formatWeeklyEarningsReply(sheets));
+      return;
+    }
+
+    if (intent === "cash-flow-blockers") {
+      reply(formatCashFlowBlockersReply(sheets));
+      return;
+    }
+
+    if (intent === "show-overdue") {
+      const overdueAlerts = alerts.filter((alert) => alert.severity === "high" || alert.severity === "medium").slice(0, 5);
+      if (overdueAlerts.length === 0) {
+        reply("There are no urgent overdue operational items right now.");
         return;
       }
 
-      const nextType = detectColumnType(trimmed);
+      reply(
+        overdueAlerts
+          .map((alert) => `${alert.title}. ${alert.message}${alert.dueDate ? ` Due: ${formatOverdueDate(alert.dueDate)}.` : ""}`)
+          .join(" ")
+      );
+      return;
+    }
+
+    if (intent === "search") {
+      const query = trimmed.replace(/search records?/i, "").replace(/^search/i, "").trim().toLowerCase();
+      const matches = targetSheet.rows
+        .filter((row) => targetSheet.columns.some((column) => String(row[column.id] ?? "").toLowerCase().includes(query)))
+        .slice(0, 5);
+
+      if (matches.length === 0) {
+        reply(`I could not find anything matching "${query}" in ${targetSheetKey}.`);
+        return;
+      }
+
+      const primaryColumnId = getPrimaryColumn(targetSheetKey);
+      reply(
+        matches
+          .map((row) => {
+            const title = String(row[primaryColumnId] ?? singularLabel[targetSheetKey]);
+            const summary = targetSheet.columns
+              .slice(1, 3)
+              .map((column) => `${column.label}: ${String(row[column.id] ?? "")}`)
+              .join(", ");
+            return `${title}. ${summary}`;
+          })
+          .join(" ")
+      );
+      return;
+    }
+
+    if (intent === "add-column") {
+      const columnLabel = (trimmed.match(/(?:add|create)\s+(?:a\s+)?column(?:\s+called|\s+named)?\s+([a-z0-9 _-]+)/i)?.[1] ?? "").trim();
+      if (!columnLabel) {
+        reply(`What's the new column called for ${targetSheetKey}? For example: add column called priority type text.`);
+        return;
+      }
+
       addColumn(targetSheetKey, {
-        id: toColumnId(columnLabel),
+        id: columnLabel.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""),
         label: columnLabel,
-        type: nextType,
+        type: detectColumnType(trimmed),
         width: "180px"
       });
       setDraft({});
-      setMessages((current) => [...current, `Added the "${columnLabel}" column to ${targetSheetKey}.`]);
-      setPrompt("");
+      reply(`Added "${columnLabel}" to ${targetSheetKey}.`);
       return;
     }
 
     if (intent === "delete-row") {
       const deleteCount = extractDeleteCount(trimmed);
-
       if (deleteCount !== null) {
         if (targetSheet.rows.length === 0) {
-          setMessages((current) => [...current, `There are no rows to delete in ${targetSheetKey}.`]);
-          setPrompt("");
+          reply(`There isn't anything to delete in ${targetSheetKey} right now.`);
           return;
         }
 
         const safeCount = Math.min(deleteCount, targetSheet.rows.length);
-
         for (let index = 0; index < safeCount; index += 1) {
           deleteRow(targetSheetKey, targetSheet.rows.length - 1 - index);
         }
 
         setDraft({});
-        setMessages((current) => [
-          ...current,
-          `Deleted the last ${safeCount} row${safeCount === 1 ? "" : "s"} from ${targetSheetKey}.`
-        ]);
-        setPrompt("");
+        reply(`Done — I removed the last ${safeCount} row${safeCount === 1 ? "" : "s"} from ${targetSheetKey}.`);
         return;
       }
 
       const rowMatch = findBestRowMatch(trimmed, targetSheetKey, targetSheet);
       if (!rowMatch) {
-        setMessages((current) => [
-          ...current,
-          `Tell me exactly which ${singularLabel[targetSheetKey]} to delete, or say "delete the last 2 rows".`
-        ]);
-        setPrompt("");
+        reply(`I couldn't spot the exact ${singularLabel[targetSheetKey]}. Try the name again, or say "delete the last 2 rows".`);
         return;
       }
 
       deleteRow(targetSheetKey, rowMatch.rowIndex);
       setDraft({});
-      setMessages((current) => [...current, `Deleted ${rowMatch.primaryValue || singularLabel[targetSheetKey]} from ${targetSheetKey}.`]);
-      setPrompt("");
+      reply(`Removed ${rowMatch.primaryValue || singularLabel[targetSheetKey]} from ${targetSheetKey}.`);
       return;
     }
 
@@ -493,11 +1128,7 @@ export function SmartAssistant() {
       const literalMode = shouldUseLiteralMode(trimmed);
       const rowMatch = findBestRowMatch(trimmed, targetSheetKey, targetSheet);
       if (!rowMatch) {
-        setMessages((current) => [
-          ...current,
-          `I could not find the ${singularLabel[targetSheetKey]}. Try using its current name in simple English.`
-        ]);
-        setPrompt("");
+        reply(`I couldn't spot that ${singularLabel[targetSheetKey]}. Try using its current name and I'll follow it.`);
         return;
       }
 
@@ -506,16 +1137,13 @@ export function SmartAssistant() {
       if (!literalMode && likelyStatus && nextValues[likelyStatus.column.id] === undefined) {
         nextValues[likelyStatus.column.id] = likelyStatus.value;
       }
+
       const changedColumns = targetSheet.columns.filter(
         (column) => nextValues[column.id] !== undefined && String(nextValues[column.id]) !== String(rowMatch.row[column.id] ?? "")
       );
 
       if (changedColumns.length === 0) {
-        setMessages((current) => [
-          ...current,
-          `I found "${rowMatch.primaryValue || singularLabel[targetSheetKey]}". Now tell me what to change. Example: change status to Completed.`
-        ]);
-        setPrompt("");
+        reply(`I found "${rowMatch.primaryValue || singularLabel[targetSheetKey]}". Tell me what to change, like "set status to Completed".`);
         return;
       }
 
@@ -524,121 +1152,141 @@ export function SmartAssistant() {
       });
 
       setDraft({});
-      setMessages((current) => [
-        ...current,
-        `Updated ${rowMatch.primaryValue || singularLabel[targetSheetKey]} in ${targetSheetKey}: ${changedColumns.map((column) => column.label).join(", ")}.`
-      ]);
-      setPrompt("");
+      reply(`Done — I updated ${rowMatch.primaryValue || singularLabel[targetSheetKey]} in ${targetSheetKey}: ${changedColumns.map((column) => column.label).join(", ")}.`);
       return;
     }
 
     const literalMode = shouldUseLiteralMode(trimmed);
-    const keepRemainingEmpty = shouldKeepRemainingFieldsEmpty(trimmed);
     const nextDraft = extractFromPrompt(trimmed, targetSheetKey, targetSheet.columns, {}, { explicitOnly: literalMode });
     const primaryColumnId = getPrimaryColumn(targetSheetKey);
     const primaryColumn = targetSheet.columns.find((column) => column.id === primaryColumnId);
-    const nextMissing = getEmptyRequiredColumns(targetSheetKey, targetSheet.columns, nextDraft);
+    const nextMissing = missingColumns(targetSheetKey, targetSheet.columns, nextDraft).filter((column) => column.id !== primaryColumnId);
 
     if (!nextDraft[primaryColumnId]) {
       setDraft(nextDraft);
-      setMessages((current) => [
-        ...current,
-        `Tell me the ${primaryColumn?.label ?? "main name"} clearly. Example: add project named Website Revamp.`
-      ]);
-      setPrompt("");
+      const questionLike = /[?]$|\b(what|which|who|why|how|show|tell|can you|could you|do you)\b/i.test(trimmed);
+      reply(
+        questionLike
+          ? "I’m not sure if you want me to create something or answer something. If you’re asking about your data, try a more direct question and I’ll pull it up."
+          : `Tell me the ${primaryColumn?.label ?? "main name"} and I'll build the rest around it. Example: add project named Website Revamp.`
+      );
       return;
     }
 
-    addRowWithValues(targetSheetKey, nextDraft, keepRemainingEmpty || literalMode);
+    addRowWithValues(targetSheetKey, nextDraft, shouldKeepRemainingFieldsEmpty(trimmed) || literalMode);
     setDraft({});
-    setMessages((current) => [
-      ...current,
+    reply(
       nextMissing.length > 0
-        ? `Added a new ${singularLabel[targetSheetKey]} to ${targetSheetKey}. You can still fill: ${nextMissing.map((column) => column.label).join(", ")}.`
-        : `Added a new ${singularLabel[targetSheetKey]} to ${targetSheetKey}.`
-    ]);
-    setPrompt("");
+        ? `Done — I added a new ${singularLabel[targetSheetKey]} to ${targetSheetKey}. You can still fill: ${nextMissing.map((column) => column.label).join(", ")}.`
+        : `Done — I added a new ${singularLabel[targetSheetKey]} to ${targetSheetKey}.`
+    );
   };
 
   return (
     <div className="fixed bottom-5 right-5 z-40 flex items-end">
       {open ? (
-        <Card className="w-[470px] rounded-[34px] border-white/70 bg-white/90 p-0 shadow-[0_36px_90px_rgba(41,22,90,0.18)] backdrop-blur-2xl xl:w-[520px]">
-          <div className="flex items-center justify-between border-b border-white/80 bg-gradient-to-r from-fuchsia-100 via-amber-50 to-sky-100 px-6 py-5">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-fuchsia-400 via-rose-300 to-sky-300 text-white shadow-lg shadow-fuchsia-200/80">
-                <Bot className="h-5 w-5" />
+        <Card className="flex max-h-[min(86vh,760px)] w-[min(96vw,560px)] flex-col overflow-hidden rounded-[34px] border-white/70 bg-white/95 p-0 shadow-[0_36px_90px_rgba(15,23,42,0.2)] backdrop-blur-2xl">
+          <div className="border-b border-white/80 bg-[radial-gradient(circle_at_top_left,_rgba(251,191,36,0.18),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(56,189,248,0.16),_transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96))] px-5 py-5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 via-orange-400 to-sky-500 text-white shadow-lg">
+                  <Bot className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-base font-semibold text-slate-900">Pixelkode Voice Assistant</p>
+                  <p className="text-xs text-slate-600">Ask questions naturally, use voice, and get direct answers in chat</p>
+                </div>
               </div>
-              <div>
-                <p className="text-base font-semibold text-slate-900">Pixelkode Command Assistant</p>
-                <p className="text-xs text-slate-600">Works across projects, leads, revenue, team, content, and services</p>
-              </div>
+              <Button variant="ghost" size="icon" onClick={() => setOpen(false)} aria-label="Close assistant">
+                <X className="h-4 w-4" />
+              </Button>
             </div>
-            <Button variant="ghost" size="icon" onClick={() => setOpen(false)} aria-label="Close assistant">
-              <X className="h-4 w-4" />
-            </Button>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setVoiceRepliesEnabled((value) => !value)}
+                className={cn(
+                  "rounded-full border px-3 py-2 text-xs font-semibold transition",
+                  voiceRepliesEnabled ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-white text-slate-600"
+                )}
+              >
+                {voiceRepliesEnabled ? <Volume2 className="mr-2 inline h-3.5 w-3.5" /> : <VolumeX className="mr-2 inline h-3.5 w-3.5" />}
+                {voiceRepliesEnabled ? "Voice replies on" : "Voice replies off"}
+              </button>
+
+              <button
+                type="button"
+                onClick={isListening ? stopListening : startListening}
+                className={cn(
+                  "rounded-full border px-3 py-2 text-xs font-semibold transition",
+                  isListening ? "border-rose-200 bg-rose-50 text-rose-700" : "border-sky-200 bg-sky-50 text-sky-700"
+                )}
+              >
+                {isListening ? <MicOff className="mr-2 inline h-3.5 w-3.5" /> : <Mic className="mr-2 inline h-3.5 w-3.5" />}
+                {isListening ? "Stop listening" : "Start listening"}
+              </button>
+
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600">
+                Active target: {currentSheetKey}
+              </span>
+            </div>
           </div>
 
-          <div className="space-y-5 p-6">
-            <div className="grid gap-3 md:grid-cols-3">
-              <QuickCommand
-                icon={Plus}
-                title="Add row"
-                description="Add project named Bakery Website with client Ravi"
-                onClick={() => setPrompt("add project named Bakery Website with client Ravi")}
-              />
-              <QuickCommand
-                icon={FilePenLine}
-                title="Edit row"
-                description="Change Bloomline lead status to Converted"
-                onClick={() => setPrompt("change Bloomline lead status to Converted")}
-              />
-              <QuickCommand
-                icon={Columns3}
-                title="Add column"
-                description="In leads page add column called Priority type text"
-                onClick={() => setPrompt("in leads page add column called Priority type text")}
-              />
-            </div>
-
-            <div className="rounded-[28px] border border-white/80 bg-gradient-to-br from-white via-fuchsia-50/80 to-sky-50/80 p-4">
-              <div className="flex items-center gap-2 text-sm font-medium text-slate-800">
-                <Sparkles className="h-4 w-4 text-fuchsia-500" />
-                Active target
+          <div className="flex min-h-0 flex-1 flex-col gap-4 p-5">
+            <div className="flex min-h-0 flex-1 flex-col rounded-[28px] border border-slate-200 bg-white p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+              <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                <Sparkles className="h-3.5 w-3.5" />
+                Conversation
               </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {sheetKeys.map((sheetKey) => (
-                  <button
-                    key={sheetKey}
-                    type="button"
-                    onClick={() => setActiveSheetKey(sheetKey)}
-                    className={`rounded-full px-3 py-1.5 text-xs font-semibold capitalize transition-all ${
-                      currentSheetKey === sheetKey
-                        ? "bg-gradient-to-r from-fuchsia-400 via-rose-300 to-sky-300 text-white shadow-lg"
-                        : "border border-white/80 bg-white text-slate-700"
-                    }`}
-                  >
-                    {sheetKey}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {messages.length > 0 ? (
-              <div className="max-h-44 space-y-2 overflow-y-auto rounded-[26px] border border-white/70 bg-white/65 p-3">
-                {messages.map((message, index) => (
-                  <div key={`${message}-${index}`} className="rounded-2xl border border-white/70 bg-white/85 px-4 py-3 text-sm text-slate-700">
-                    {message}
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+                {messages.map((message) => (
+                  <div key={message.id} className={cn("flex", message.role === "user" ? "justify-end" : "justify-start")}>
+                    <div className={cn("flex max-w-[88%] items-end gap-2", message.role === "user" ? "flex-row-reverse" : "flex-row")}>
+                      <div
+                        className={cn(
+                          "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold uppercase tracking-[0.16em]",
+                          message.role === "user"
+                            ? "bg-slate-900 text-white shadow-sm shadow-slate-300"
+                            : "bg-gradient-to-br from-fuchsia-100 to-sky-100 text-slate-600"
+                        )}
+                      >
+                        {message.role === "user" ? "You" : "AI"}
+                      </div>
+                      <div
+                        className={cn(
+                          "rounded-[24px] px-4 py-3 text-sm leading-6 whitespace-pre-wrap shadow-sm",
+                          message.role === "user"
+                            ? "bg-slate-900 text-white shadow-[0_12px_30px_rgba(15,23,42,0.18)]"
+                            : "border border-slate-200 bg-white text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.06)]"
+                        )}
+                      >
+                        {message.content}
+                      </div>
+                    </div>
                   </div>
                 ))}
+
+                {isListening || liveTranscript ? (
+                  <div className="flex justify-end">
+                    <div className="max-w-[88%] rounded-[24px] border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-800 shadow-sm">
+                      <div className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em]">
+                        <WandSparkles className="h-3.5 w-3.5" />
+                        Live transcript
+                      </div>
+                      {liveTranscript || "Listening..."}
+                    </div>
+                  </div>
+                ) : null}
+                <div ref={messagesEndRef} />
               </div>
-            ) : null}
+            </div>
 
             {previewColumns.length > 0 ? (
               <div className="rounded-[26px] border border-emerald-100 bg-emerald-50/75 p-4">
                 <div className="flex items-center gap-2 text-sm font-medium text-emerald-900">
-                  <WandSparkles className="h-4 w-4" />
-                  Draft preview for {currentSheetKey}
+                  <CheckCircle2 className="h-4 w-4" />
+                  Draft context for {currentSheetKey}
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {previewColumns.map((column) => (
@@ -647,20 +1295,40 @@ export function SmartAssistant() {
                     </span>
                   ))}
                 </div>
-                {missing.length > 0 ? (
-                  <p className="mt-3 text-xs font-medium text-orange-700">
-                    Optional next fields: {missing.map((column) => column.label).join(", ")}
-                  </p>
-                ) : null}
               </div>
             ) : null}
 
-            <div className="flex gap-3">
+            <div className="rounded-[26px] border border-slate-200 bg-slate-50 p-3">
+              <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                <MessageSquare className="h-3.5 w-3.5" />
+                Quick prompts
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+              {[
+                "how many leads are there in current data",
+                "give me a summary of current projects",
+                "show overdue tasks",
+                "search records Taste & Table"
+              ].map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => setPrompt(suggestion)}
+                  className="rounded-full border border-slate-200 bg-white px-4 py-3 text-left text-sm font-medium text-slate-700 shadow-sm transition hover:-translate-y-[1px] hover:border-slate-300 hover:bg-slate-50 hover:shadow-md"
+                >
+                  {suggestion}
+                </button>
+              ))}
+              </div>
+            </div>
+
+            <div className="flex gap-3 rounded-[24px] border border-violet-100 bg-white p-2 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
               <Input
+                ref={inputRef}
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
-                placeholder="Try: change Bloomline lead status to Converted"
-                className="h-12"
+                placeholder="Ask anything about your current data..."
+                className="h-12 border-slate-200 bg-slate-50/70 text-slate-800 placeholder:text-slate-400 focus-visible:ring-fuchsia-200"
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault();
@@ -668,62 +1336,18 @@ export function SmartAssistant() {
                   }
                 }}
               />
-              <Button size="icon" className="h-12 w-12 shrink-0 rounded-2xl" onClick={executePrompt} aria-label="Run assistant command">
+              <Button size="icon" className="h-12 w-12 shrink-0 rounded-2xl bg-slate-900 text-white shadow-[0_16px_40px_rgba(15,23,42,0.2)] hover:bg-slate-800" onClick={executePrompt} aria-label="Run assistant command">
                 <Send className="h-4 w-4" />
-              </Button>
-            </div>
-
-            <div className="flex justify-end">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() =>
-                  setPrompt(
-                    `add ${singularLabel[currentSheetKey]} named `
-                  )
-                }
-              >
-                Use Add Template
               </Button>
             </div>
           </div>
         </Card>
       ) : null}
 
-      <Button
-        size="lg"
-        className="rounded-full px-5 shadow-[0_24px_60px_rgba(217,74,175,0.28)]"
-        onClick={() => setOpen((value) => !value)}
-      >
+      <Button size="lg" className="rounded-full px-5 shadow-[0_24px_60px_rgba(245,158,11,0.26)]" onClick={() => setOpen((value) => !value)}>
         <MessageSquare className="mr-2 h-5 w-5" />
-        Command Assistant
+        Voice Assistant
       </Button>
     </div>
-  );
-}
-
-function QuickCommand({
-  icon: Icon,
-  title,
-  description,
-  onClick
-}: {
-  icon: typeof Plus;
-  title: string;
-  description: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="rounded-[24px] border border-white/80 bg-white/80 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-lg"
-    >
-      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-fuchsia-200 via-orange-100 to-sky-100 text-fuchsia-700">
-        <Icon className="h-4 w-4" />
-      </div>
-      <p className="mt-3 text-sm font-semibold text-slate-900">{title}</p>
-      <p className="mt-1 text-xs leading-5 text-slate-600">{description}</p>
-    </button>
   );
 }

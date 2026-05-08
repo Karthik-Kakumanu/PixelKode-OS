@@ -2,9 +2,13 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
+export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(function Input(
+  { className, ...props },
+  ref
+) {
   return (
     <input
+      ref={ref}
       suppressHydrationWarning
       className={cn(
         "flex h-11 w-full rounded-2xl border border-violet-200 bg-white/60 px-4 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-200",
@@ -13,7 +17,9 @@ export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInp
       {...props}
     />
   );
-}
+});
+
+Input.displayName = "Input";
 
 Input.Password = function PasswordInput({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
   const [show, setShow] = React.useState(false);

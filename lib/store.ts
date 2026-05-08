@@ -33,6 +33,9 @@ let activeSaveRequest = 0;
 const PROJECT_REVENUE_SYNC_SOURCE = "project_income_sync";
 const LOCAL_CACHE_KEY = "pixelkode_os_cached_sheets";
 const LOCAL_PENDING_KEY = "pixelkode_os_pending_sheets";
+const LOCAL_READ_ALERTS_KEY = "pixelkode_os_read_alert_ids";
+
+let alertRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
 function canUseStorage() {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
@@ -68,6 +71,30 @@ function clearStoredSheets(key: string) {
     window.localStorage.removeItem(key);
   } catch {
     // Ignore storage cleanup failures.
+  }
+}
+
+function readStoredAlertIds() {
+  if (!canUseStorage()) return [] as string[];
+
+  try {
+    const raw = window.localStorage.getItem(LOCAL_READ_ALERTS_KEY);
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredAlertIds(readAlertIds: string[]) {
+  if (!canUseStorage()) return;
+
+  try {
+    window.localStorage.setItem(LOCAL_READ_ALERTS_KEY, JSON.stringify(readAlertIds));
+  } catch {
+    // Ignore storage quota or serialization issues and continue with app state.
   }
 }
 
@@ -270,10 +297,55 @@ function buildOperationalState(sheets: Record<SheetKey, SheetData>, readAlertIds
   };
 }
 
+function ensureAllSheetsPresent(sheets: Record<SheetKey, SheetData> | null | undefined) {
+  const defaults = createDefaultSheets();
+  if (!sheets) return defaults;
+
+  // Fill missing keys from defaults but keep existing user data.
+  const merged: Record<SheetKey, SheetData> = { ...defaults } as Record<SheetKey, SheetData>;
+
+  Object.keys(sheets).forEach((k) => {
+    // @ts-ignore - runtime key check
+    merged[k as SheetKey] = sheets[k as SheetKey];
+  });
+
+  return merged;
+}
+
+function getNextMidnightDelay() {
+  const now = new Date();
+  const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
+  return Math.max(nextMidnight.getTime() - now.getTime(), 1000);
+}
+
+function scheduleAlertRefresh(get: () => BusinessStore, set: (partial: Partial<BusinessStore>) => void) {
+  if (alertRefreshTimer) {
+    clearTimeout(alertRefreshTimer);
+  }
+
+  if (!canUseStorage()) {
+    return;
+  }
+
+  alertRefreshTimer = setTimeout(() => {
+    const current = get();
+    const syncedSheets = syncRevenueFromProjects(current.sheets);
+    const nextState = buildOperationalState(syncedSheets, current.readAlertIds);
+
+    set({
+      alerts: nextState.alerts,
+      readAlertIds: nextState.readAlertIds
+    });
+
+    writeStoredAlertIds(nextState.readAlertIds);
+    scheduleAlertRefresh(get, set);
+  }, getNextMidnightDelay());
+}
+
 export const useBusinessStore = create<BusinessStore>((set, get) => ({
   sheets: createDefaultSheets(),
   alerts: deriveOperationalAlerts(createDefaultSheets()),
-  readAlertIds: [],
+  readAlertIds: readStoredAlertIds(),
   isLoaded: false,
   isSaving: false,
   error: "",
@@ -285,7 +357,8 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     const localSheets = pendingSheets ?? cachedSheets;
 
     if (localSheets) {
-      const syncedLocalSheets = syncRevenueFromProjects(localSheets);
+      const mergedLocal = ensureAllSheetsPresent(localSheets);
+      const syncedLocalSheets = syncRevenueFromProjects(mergedLocal);
       const localState = buildOperationalState(syncedLocalSheets, get().readAlertIds);
 
       set({
@@ -295,6 +368,9 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
         isLoaded: true,
         error: pendingSheets ? "Offline changes are waiting to sync." : ""
       });
+
+      writeStoredAlertIds(localState.readAlertIds);
+      scheduleAlertRefresh(get, set);
     }
 
     if (typeof navigator !== "undefined" && !navigator.onLine) {
@@ -310,7 +386,7 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
 
     try {
       if (pendingSheets) {
-        await persistSheets(syncRevenueFromProjects(pendingSheets), set);
+        await persistSheets(syncRevenueFromProjects(ensureAllSheetsPresent(pendingSheets)), set);
       }
 
       const response = await fetch("/api/business-state", {
@@ -322,7 +398,8 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       }
 
       const payload = (await response.json()) as { sheets?: Record<SheetKey, SheetData> };
-      const syncedSheets = syncRevenueFromProjects(payload.sheets ?? createDefaultSheets());
+      const mergedPayload = ensureAllSheetsPresent(payload.sheets ?? createDefaultSheets());
+      const syncedSheets = syncRevenueFromProjects(mergedPayload);
       const nextState = buildOperationalState(syncedSheets, get().readAlertIds);
 
       set({
@@ -333,6 +410,8 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
         error: ""
       });
       writeStoredSheets(LOCAL_CACHE_KEY, nextState.sheets);
+      writeStoredAlertIds(nextState.readAlertIds);
+      scheduleAlertRefresh(get, set);
     } catch (error) {
       console.error(error);
       if (!localSheets) {
@@ -523,9 +602,13 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     const { readAlertIds } = get();
     if (readAlertIds.includes(alertId)) return;
 
-    set({ readAlertIds: [...readAlertIds, alertId] });
+    const nextReadAlertIds = [...readAlertIds, alertId];
+    set({ readAlertIds: nextReadAlertIds });
+    writeStoredAlertIds(nextReadAlertIds);
   },
   markAllAlertsRead: () => {
-    set({ readAlertIds: get().alerts.map((alert) => alert.id) });
+    const nextReadAlertIds = get().alerts.map((alert) => alert.id);
+    set({ readAlertIds: nextReadAlertIds });
+    writeStoredAlertIds(nextReadAlertIds);
   }
 }));

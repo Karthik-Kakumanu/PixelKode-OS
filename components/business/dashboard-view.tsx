@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowUpRight, CircleDollarSign, FolderKanban, Megaphone, Sparkles } from "lucide-react";
+import { ArrowUpRight, CircleDollarSign, FolderKanban, Megaphone, Sparkles, Server, Database } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 import {
   ContentLeadsChart,
@@ -31,6 +32,7 @@ import {
 } from "@/lib/analytics";
 import { getStatusClasses } from "@/lib/sheet-ui";
 import { useBusinessStore } from "@/lib/store";
+import { useRef } from "react";
 import { cn, formatCurrency } from "@/lib/utils";
 
 const progressColors = ["#ff5fa2", "#7c6cff", "#1cc8c0", "#ff9b54", "#3b82f6"];
@@ -44,6 +46,8 @@ const heroAccents = [
 
 export function DashboardView() {
   const sheets = useBusinessStore((state) => state.sheets);
+  const addRow = useBusinessStore((state) => state.addRow);
+  const router = useRouter();
   const alerts = useBusinessStore((state) => state.alerts);
   const isLoaded = useBusinessStore((state) => state.isLoaded);
   const error = useBusinessStore((state) => state.error);
@@ -78,6 +82,19 @@ export function DashboardView() {
   const topContent = content
     .slice()
     .sort((left, right) => Number(right.leadsGenerated ?? 0) - Number(left.leadsGenerated ?? 0))[0];
+  // Accurate Today's Follow-Ups
+  function isToday(dateString) {
+    if (!dateString) return false;
+    const today = new Date();
+    const date = new Date(dateString);
+    return (
+      date.getFullYear() === today.getFullYear() &&
+      date.getMonth() === today.getMonth() &&
+      date.getDate() === today.getDate()
+    );
+  }
+
+  const todaysFollowUps = leads.filter((row) => isToday(row.followUpDate)).slice(0, 10);
   const followUpLeads = leads
     .filter((row) => {
       const leadStatusValue = String(row.leadStatus ?? "");
@@ -106,35 +123,83 @@ export function DashboardView() {
 
   return (
     <div className="space-y-4">
+      <div className="flex gap-3 mb-2 items-center">
+        <div className="ml-auto flex items-center gap-2">
+          <div className="text-sm font-semibold text-slate-600">Quick Actions</div>
+          <div className="flex gap-2">
+            <button onClick={() => { addRow("servers"); router.push("/servers"); }} className="rounded-full border bg-white p-2 shadow-sm" title="Add server">
+              <Server className="h-4 w-4 text-slate-700" />
+            </button>
+            <button onClick={() => { addRow("databases"); router.push("/databases"); }} className="rounded-full border bg-white p-2 shadow-sm" title="Add database">
+              <Database className="h-4 w-4 text-slate-700" />
+            </button>
+          </div>
+        </div>
+      </div>
       {!isLoaded ? <p className="text-sm text-slate-400">Loading Railway data...</p> : null}
       {error ? <p className="text-sm text-amber-300">{error}</p> : null}
 
-      {alerts.length > 0 ? (
-        <Card className="overflow-hidden rounded-[24px] p-0">
-          <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
-            <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">Needs Attention</p>
-            <h3 className="mt-2 text-xl font-semibold text-slate-950">Operational alerts surfaced by the system</h3>
+      {/* Combined Premium Action Center */}
+      {(todaysFollowUps.length > 0 || alerts.length > 0) && (
+        <Card className="overflow-hidden rounded-[28px] p-0 shadow-lg border-2 border-fuchsia-200 bg-gradient-to-br from-white via-fuchsia-50 to-emerald-50">
+          <div className="border-b border-fuchsia-200 bg-gradient-to-r from-fuchsia-100 via-emerald-50 to-white px-6 py-5 flex items-center gap-4">
+            <Sparkles className="h-6 w-6 text-fuchsia-500" />
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.22em] text-fuchsia-700">Action Center</p>
+              <h3 className="mt-1 text-2xl font-extrabold text-slate-900">Today's Urgent Actions</h3>
+            </div>
           </div>
-          <div className="grid gap-3 p-4 lg:grid-cols-3">
-            {alerts.slice(0, 3).map((alert) => (
-              <div
-                key={alert.id}
-                className={`rounded-[20px] border p-4 ${
-                  alert.severity === "high"
-                    ? "border-rose-200 bg-rose-50"
-                    : alert.severity === "medium"
-                      ? "border-amber-200 bg-amber-50"
-                      : "border-slate-200 bg-slate-50"
-                }`}
-              >
-                <p className="text-sm font-semibold text-slate-900">{alert.title}</p>
-                <p className="mt-2 text-sm leading-6 text-slate-600">{alert.message}</p>
-                {alert.actionLabel ? <p className="mt-3 text-xs font-medium uppercase tracking-[0.16em] text-slate-500">{alert.actionLabel}</p> : null}
+          <div className="grid gap-4 p-6 lg:grid-cols-2">
+            {/* Today's Follow-Ups */}
+            {todaysFollowUps.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <CircleDollarSign className="h-5 w-5 text-emerald-500" />
+                  <span className="text-sm font-semibold text-emerald-900">Leads to Follow Up Today</span>
+                </div>
+                <div className="space-y-3">
+                  {todaysFollowUps.map((lead, idx) => (
+                    <div key={lead.id || idx} className="rounded-[18px] border border-emerald-200 bg-white p-4 shadow-sm">
+                      <p className="text-base font-bold text-slate-900">{lead.businessName || lead.contactName || 'Lead'}</p>
+                      <p className="mt-1 text-xs text-slate-600">Follow-up Date: <span className="font-semibold">{lead.followUpDate}</span></p>
+                      <p className="mt-1 text-xs text-slate-600">Status: <span className="font-semibold">{lead.leadStatus || 'N/A'}</span></p>
+                      <p className="mt-1 text-xs text-slate-600">Notes: {lead.notes || '-'}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
-            ))}
+            )}
+            {/* Operational Alerts */}
+            {alerts.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <ArrowUpRight className="h-5 w-5 text-rose-500" />
+                  <span className="text-sm font-semibold text-rose-900">Operational Alerts</span>
+                </div>
+                <div className="space-y-3">
+                  {alerts.slice(0, 3).map((alert) => (
+                    <div
+                      key={alert.id}
+                      className={cn(
+                        "rounded-[18px] border p-4 shadow-sm",
+                        alert.severity === "high"
+                          ? "border-rose-200 bg-rose-50"
+                          : alert.severity === "medium"
+                          ? "border-amber-200 bg-amber-50"
+                          : "border-slate-200 bg-slate-50"
+                      )}
+                    >
+                      <p className="text-base font-bold text-slate-900">{alert.title}</p>
+                      <p className="mt-2 text-sm leading-6 text-slate-600">{alert.message}</p>
+                      {alert.actionLabel ? <p className="mt-3 text-xs font-bold uppercase tracking-[0.16em] text-fuchsia-700">{alert.actionLabel}</p> : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </Card>
-      ) : null}
+      )}
 
       <Card className="overflow-hidden rounded-[28px] p-0">
         <div className="px-6 py-6 lg:px-8">

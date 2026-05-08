@@ -17,7 +17,15 @@ export interface SheetData {
   rows: SheetRow[];
 }
 
-export type SheetKey = "projects" | "leads" | "revenue" | "team" | "content" | "services";
+export type SheetKey =
+  | "projects"
+  | "leads"
+  | "revenue"
+  | "team"
+  | "content"
+  | "services"
+  | "servers"
+  | "databases";
 
 export interface DashboardMetric {
   label: string;

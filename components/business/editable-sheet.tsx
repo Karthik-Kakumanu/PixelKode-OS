@@ -198,39 +198,39 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
 
   const requiredColumns = useMemo(() => new Set(getRequiredColumns(sheetKey)), [sheetKey]);
   const quickViews = useMemo(() => buildQuickViews(sheetKey), [sheetKey]);
-  const selectableColumns = useMemo(
-    () => sheet.columns.filter((column) => shouldRenderAsSelect(sheetKey, column)),
-    [sheet.columns, sheetKey]
-  );
+  const selectableColumns = useMemo(() => (sheet ? sheet.columns.filter((column) => shouldRenderAsSelect(sheetKey, column)) : []), [sheet, sheetKey]);
 
   const filteredRows = useMemo(() => {
     const query = search.trim().toLowerCase();
+    const rows = sheet?.rows ?? [];
+    const columns = sheet?.columns ?? [];
 
-    return sheet.rows.filter((row) => {
+    return rows.filter((row) => {
       const quickView = quickViews.find((item) => item.id === quickViewId);
       const matchesQuery =
         query.length === 0 ||
-        sheet.columns.some((column) => String(row[column.id] ?? "").toLowerCase().includes(query));
+        columns.some((column) => String(row[column.id] ?? "").toLowerCase().includes(query));
 
       if (!matchesQuery) return false;
       if (quickView && !quickView.matches(row)) return false;
       if (filterColumnId === "all" || filterValue === "all") return true;
       return String(row[filterColumnId] ?? "") === filterValue;
     });
-  }, [filterColumnId, filterValue, quickViewId, quickViews, search, sheet.columns, sheet.rows]);
+  }, [filterColumnId, filterValue, quickViewId, quickViews, search, sheet]);
 
   const activeFilterOptions = useMemo(() => {
     if (filterColumnId === "all") return [];
-    const column = sheet.columns.find((item) => item.id === filterColumnId);
+    const columns = sheet?.columns ?? [];
+    const column = columns.find((item) => item.id === filterColumnId);
     if (!column) return [];
 
     const dynamicOptions =
       sheetKey === "leads" && column.id === "servicePitch"
-        ? servicesSheet.rows.map((row) => String(row.serviceName ?? "")).filter(Boolean)
+        ? (servicesSheet?.rows ?? []).map((row) => String(row.serviceName ?? "")).filter(Boolean)
         : [];
 
     return Array.from(new Set([...getColumnOptions(sheetKey, column), ...dynamicOptions]));
-  }, [filterColumnId, servicesSheet.rows, sheet.columns, sheetKey]);
+  }, [filterColumnId, servicesSheet?.rows, sheet, sheetKey]);
 
   const setCustomDraft = (rowId: string, columnId: string, value: string) => {
     setCustomOptionDrafts((current) => ({
@@ -268,6 +268,24 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
             <div className="overflow-hidden rounded-[22px] border border-white/70 bg-white/45">
               <div className="h-72 bg-gradient-to-b from-white/60 to-fuchsia-50/30" />
             </div>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!sheet) {
+    return (
+      <div className="space-y-6">
+        <Card className="overflow-hidden p-0">
+          <div className="border-b border-white/70 bg-white/80 px-4 py-3">
+            <div>
+              <h1 className="premium-heading text-2xl font-semibold capitalize">{sheetKey}</h1>
+              <p className="mt-1 text-sm text-slate-600">Sheet not found in workspace.</p>
+            </div>
+          </div>
+          <div className="space-y-4 p-4">
+            <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">This sheet is not available. Try reloading or check your workspace configuration.</p>
           </div>
         </Card>
       </div>

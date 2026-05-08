@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import React from "react";
-import { BriefcaseBusiness, ChartColumnBig, CircleDollarSign, FileText, LayoutDashboard, PanelLeftClose, Sparkles, Users } from "lucide-react";
+import { BriefcaseBusiness, ChartColumnBig, CircleDollarSign, FileText, LayoutDashboard, PanelLeftClose, Sparkles, Users, Server, Database } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -15,7 +15,9 @@ const items = [
   { href: "/revenue", label: "Revenue", icon: CircleDollarSign },
   { href: "/team", label: "Team", icon: Users },
   { href: "/content", label: "Content", icon: FileText },
-  { href: "/services", label: "Services", icon: ChartColumnBig }
+  { href: "/services", label: "Services", icon: ChartColumnBig },
+  { href: "/servers", label: "Servers", icon: Server },
+  { href: "/databases", label: "Databases", icon: Database }
 ];
 
 export function Sidebar({
