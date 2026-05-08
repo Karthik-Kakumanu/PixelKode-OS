@@ -7,6 +7,25 @@ function unauthorizedResponse() {
   return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 }
 
+function getAppOrigin(request: Request) {
+  const configuredRedirectUri = process.env.GOOGLE_REDIRECT_URI;
+  if (configuredRedirectUri) {
+    try {
+      return new URL(configuredRedirectUri).origin;
+    } catch {
+      // Fall through to forwarded headers / request URL.
+    }
+  }
+
+  const forwardedProto = request.headers.get("x-forwarded-proto");
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  if (forwardedProto && forwardedHost) {
+    return `${forwardedProto}://${forwardedHost}`;
+  }
+
+  return new URL(request.url).origin;
+}
+
 export async function GET(request: Request) {
   try {
     if (!(await isAuthenticated())) {
@@ -18,13 +37,13 @@ export async function GET(request: Request) {
     const state = url.searchParams.get("state");
 
     if (!code) {
-      return NextResponse.redirect(new URL("/meet-session?error=google-code", request.url));
+      return NextResponse.redirect(new URL("/meet-session?error=google-code", getAppOrigin(request)));
     }
 
     await exchangeGoogleCode(code, state);
-    return NextResponse.redirect(new URL("/meet-session?connected=1", request.url));
+    return NextResponse.redirect(new URL("/meet-session?connected=1", getAppOrigin(request)));
   } catch (error) {
     console.error("Failed to complete Google OAuth", error);
-    return NextResponse.redirect(new URL("/meet-session?error=google-auth", request.url));
+    return NextResponse.redirect(new URL("/meet-session?error=google-auth", getAppOrigin(request)));
   }
 }
