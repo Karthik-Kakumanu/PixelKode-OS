@@ -83,8 +83,8 @@ export function DashboardView() {
     .slice()
     .sort((left, right) => Number(right.leadsGenerated ?? 0) - Number(left.leadsGenerated ?? 0))[0];
   // Accurate Today's Follow-Ups
-  function isToday(dateString) {
-    if (!dateString) return false;
+  function isToday(dateString: string | number | boolean | null | undefined) {
+    if (!dateString || typeof dateString === 'boolean') return false;
     const today = new Date();
     const date = new Date(dateString);
     return (
@@ -159,7 +159,7 @@ export function DashboardView() {
                 </div>
                 <div className="space-y-3">
                   {todaysFollowUps.map((lead, idx) => (
-                    <div key={lead.id || idx} className="rounded-[18px] border border-emerald-200 bg-white p-4 shadow-sm">
+                    <div key={typeof lead.id === 'string' || typeof lead.id === 'number' ? lead.id : idx} className="rounded-[18px] border border-emerald-200 bg-white p-4 shadow-sm">
                       <p className="text-base font-bold text-slate-900">{lead.businessName || lead.contactName || 'Lead'}</p>
                       <p className="mt-1 text-xs text-slate-600">Follow-up Date: <span className="font-semibold">{lead.followUpDate}</span></p>
                       <p className="mt-1 text-xs text-slate-600">Status: <span className="font-semibold">{lead.leadStatus || 'N/A'}</span></p>

@@ -2,7 +2,11 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(function Input(
+interface InputComponent extends React.ForwardRefExoticComponent<React.InputHTMLAttributes<HTMLInputElement> & React.RefAttributes<HTMLInputElement>> {
+  Password: React.FC<React.InputHTMLAttributes<HTMLInputElement>>;
+}
+
+const InputBase = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(function Input(
   { className, ...props },
   ref
 ) {
@@ -19,9 +23,9 @@ export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttribute
   );
 });
 
-Input.displayName = "Input";
+InputBase.displayName = "Input";
 
-Input.Password = function PasswordInput({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
+const PasswordInput = function PasswordInput({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
   const [show, setShow] = React.useState(false);
   const [hydrated, setHydrated] = React.useState(false);
   React.useEffect(() => { setHydrated(true); }, []);
@@ -58,3 +62,5 @@ Input.Password = function PasswordInput({ className, ...props }: React.InputHTML
     </div>
   );
 };
+
+export const Input = Object.assign(InputBase, { Password: PasswordInput }) as InputComponent;

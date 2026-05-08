@@ -125,7 +125,9 @@ function normalizeSheets(input: unknown): BusinessSheets {
     revenue: normalizeSheet(candidate.revenue, fallback.revenue),
     team,
     content: normalizeSheet(candidate.content, fallback.content),
-    services: normalizeSheet(candidate.services, fallback.services)
+    services: normalizeSheet(candidate.services, fallback.services),
+    servers: normalizeSheet(candidate.servers, fallback.servers),
+    databases: normalizeSheet(candidate.databases, fallback.databases)
   };
 }
 

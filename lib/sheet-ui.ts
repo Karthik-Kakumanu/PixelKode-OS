@@ -177,7 +177,9 @@ export function getRequiredColumns(sheetKey: SheetKey) {
     revenue: ["entryType", "sourceName", "amount"],
     team: ["memberName", "role", "availability"],
     content: ["contentTitle", "platform", "stage"],
-    services: ["serviceName", "price", "status"]
+    services: ["serviceName", "price", "status"],
+    servers: ["serverName", "serverRole", "projectName"],
+    databases: ["databaseName", "projectName", "adminEmail"]
   };
 
   return required[sheetKey];
