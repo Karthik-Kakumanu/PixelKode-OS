@@ -1,4 +1,5 @@
 import type { DashboardMetric, SheetData } from "@/lib/types";
+import { parseDateValue } from "@/lib/date";
 import { formatCurrency } from "@/lib/utils";
 
 function toNumber(value: unknown) {
@@ -12,11 +13,7 @@ function toText(value: unknown) {
 }
 
 function parseDate(value: unknown) {
-  const text = toText(value);
-  if (!text) return null;
-
-  const date = new Date(text);
-  return Number.isNaN(date.getTime()) ? null : date;
+  return parseDateValue(toText(value));
 }
 
 function getMonthKey(date: Date) {

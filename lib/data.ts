@@ -17,145 +17,145 @@ const timetableRowTemplate = [
     id: "slot-1",
     slotLabel: "Period 1",
     timeRange: "10:30 AM - 11:30 AM",
-    monday: "Daily planning and inbox clear",
-    tuesday: "Client follow-up calls",
-    wednesday: "Deep work on delivery",
-    thursday: "Proposal writing",
-    friday: "Weekly planning",
-    saturday: "Backlog cleanup",
-    sunday: "Light personal planning"
+    monday: "",
+    tuesday: "",
+    wednesday: "",
+    thursday: "",
+    friday: "",
+    saturday: "",
+    sunday: ""
   },
   {
     id: "slot-2",
     slotLabel: "Period 2",
     timeRange: "11:30 AM - 12:30 PM",
-    monday: "Service page updates",
-    tuesday: "Content edits",
-    wednesday: "Internal review block",
-    thursday: "Lead research",
-    friday: "Client revisions",
-    saturday: "System improvements",
+    monday: "",
+    tuesday: "",
+    wednesday: "",
+    thursday: "",
+    friday: "",
+    saturday: "",
     sunday: ""
   },
   {
     id: "slot-3",
     slotLabel: "Period 3",
     timeRange: "12:30 PM - 1:30 PM",
-    monday: "Website build sprint",
-    tuesday: "CRM delivery block",
-    wednesday: "Landing page polish",
-    thursday: "Automation setup",
-    friday: "Pending task finish",
-    saturday: "Learning and experimentation",
+    monday: "",
+    tuesday: "",
+    wednesday: "",
+    thursday: "",
+    friday: "",
+    saturday: "",
     sunday: ""
   },
   {
     id: "slot-4",
     slotLabel: "Lunch",
     timeRange: "1:30 PM - 2:00 PM",
-    monday: "Lunch break",
-    tuesday: "Lunch break",
-    wednesday: "Lunch break",
-    thursday: "Lunch break",
-    friday: "Lunch break",
-    saturday: "Lunch break",
-    sunday: "Family time"
+    monday: "",
+    tuesday: "",
+    wednesday: "",
+    thursday: "",
+    friday: "",
+    saturday: "",
+    sunday: ""
   },
   {
     id: "slot-5",
     slotLabel: "Period 4",
     timeRange: "2:00 PM - 3:00 PM",
-    monday: "Client meeting block",
-    tuesday: "Design review",
-    wednesday: "Operations work",
-    thursday: "Sales outreach",
-    friday: "Finance review",
-    saturday: "Admin work",
+    monday: "",
+    tuesday: "",
+    wednesday: "",
+    thursday: "",
+    friday: "",
+    saturday: "",
     sunday: ""
   },
   {
     id: "slot-6",
     slotLabel: "Period 5",
     timeRange: "3:00 PM - 4:00 PM",
-    monday: "Development sprint",
-    tuesday: "Content production",
-    wednesday: "Development sprint",
-    thursday: "Client call block",
-    friday: "Team sync",
-    saturday: "Template cleanup",
+    monday: "",
+    tuesday: "",
+    wednesday: "",
+    thursday: "",
+    friday: "",
+    saturday: "",
     sunday: ""
   },
   {
     id: "slot-7",
     slotLabel: "Period 6",
     timeRange: "4:00 PM - 5:00 PM",
-    monday: "Testing and QA",
-    tuesday: "Documentation",
-    wednesday: "Testing and QA",
-    thursday: "Revision block",
-    friday: "Follow-up messages",
-    saturday: "Catch-up work",
+    monday: "",
+    tuesday: "",
+    wednesday: "",
+    thursday: "",
+    friday: "",
+    saturday: "",
     sunday: ""
   },
   {
     id: "slot-8",
     slotLabel: "Break",
     timeRange: "5:00 PM - 5:30 PM",
-    monday: "Tea break",
-    tuesday: "Tea break",
-    wednesday: "Tea break",
-    thursday: "Tea break",
-    friday: "Tea break",
-    saturday: "Tea break",
+    monday: "",
+    tuesday: "",
+    wednesday: "",
+    thursday: "",
+    friday: "",
+    saturday: "",
     sunday: ""
   },
   {
     id: "slot-9",
     slotLabel: "Period 7",
     timeRange: "5:30 PM - 6:30 PM",
-    monday: "Client support",
-    tuesday: "Ad hoc tasks",
-    wednesday: "Project fixes",
-    thursday: "Client support",
-    friday: "Loose-end cleanup",
-    saturday: "Planning next week",
+    monday: "",
+    tuesday: "",
+    wednesday: "",
+    thursday: "",
+    friday: "",
+    saturday: "",
     sunday: ""
   },
   {
     id: "slot-10",
     slotLabel: "Period 8",
     timeRange: "6:30 PM - 7:30 PM",
-    monday: "Second deep work block",
-    tuesday: "Proposal and quote work",
-    wednesday: "Second deep work block",
-    thursday: "Content scheduling",
-    friday: "Dashboard updates",
-    saturday: "Personal admin",
+    monday: "",
+    tuesday: "",
+    wednesday: "",
+    thursday: "",
+    friday: "",
+    saturday: "",
     sunday: ""
   },
   {
     id: "slot-11",
     slotLabel: "Period 9",
     timeRange: "7:30 PM - 8:15 PM",
-    monday: "Review active projects",
-    tuesday: "Review pipeline",
-    wednesday: "Review deliveries",
-    thursday: "Review content plan",
-    friday: "Weekly wrap-up",
-    saturday: "Reflection notes",
+    monday: "",
+    tuesday: "",
+    wednesday: "",
+    thursday: "",
+    friday: "",
+    saturday: "",
     sunday: ""
   },
   {
     id: "slot-12",
     slotLabel: "Period 10",
     timeRange: "8:15 PM - 9:00 PM",
-    monday: "Next-day planning",
-    tuesday: "Next-day planning",
-    wednesday: "Next-day planning",
-    thursday: "Next-day planning",
-    friday: "Shutdown routine",
-    saturday: "Shutdown routine",
-    sunday: "Prepare next week"
+    monday: "",
+    tuesday: "",
+    wednesday: "",
+    thursday: "",
+    friday: "",
+    saturday: "",
+    sunday: ""
   }
 ] as const;
 
@@ -333,44 +333,7 @@ export const defaultSheets: Record<SheetKey, SheetData> = {
       { id: "deliveryDate", label: "Delivery Date", type: "date", width: "130px" },
       { id: "notes", label: "Notes", type: "textarea", width: "140px" }
     ],
-    rows: [
-      {
-        id: "project-1",
-        projectName: "Taste & Table Website",
-        clientName: "Ravi Menon",
-        sector: "Food",
-        category: "Website",
-        domain: "Restaurant",
-        address: "Bengaluru",
-        projectStatus: "In Progress",
-        paymentStatus: "Partially Paid",
-        projectValue: 85000,
-        amountReceived: 45000,
-        pendingAmount: 40000,
-        completionPercent: 68,
-        startDate: "2026-04-10",
-        deliveryDate: "2026-05-20",
-        notes: "Homepage and menu flow approved"
-      },
-      {
-        id: "project-2",
-        projectName: "Northline CRM",
-        clientName: "Sara James",
-        sector: "Creative",
-        category: "CRM",
-        domain: "Studio",
-        address: "Remote",
-        projectStatus: "Completed",
-        paymentStatus: "Paid",
-        projectValue: 165000,
-        amountReceived: 165000,
-        pendingAmount: 0,
-        completionPercent: 100,
-        startDate: "2026-02-01",
-        deliveryDate: "2026-03-15",
-        notes: "Delivered and retained for support"
-      }
-    ]
+    rows: []
   },
   leads: {
     columns: [
@@ -403,34 +366,7 @@ export const defaultSheets: Record<SheetKey, SheetData> = {
       { id: "callCount", label: "Call Count", type: "number", width: "110px" },
       { id: "notes", label: "Notes", type: "textarea", width: "140px" }
     ],
-    rows: [
-      {
-        id: "lead-1",
-        businessName: "Alto Legal",
-        contactName: "Nina Patel",
-        category: "Legal",
-        servicePitch: "Client portal + automation",
-        callStatus: "Connected",
-        leadStatus: "Follow-up",
-        followUpDate: "2026-05-10",
-        expectedValue: 120000,
-        callCount: 2,
-        notes: "Asked for pricing details"
-      },
-      {
-        id: "lead-2",
-        businessName: "Bloomline",
-        contactName: "Keerthi Anand",
-        category: "Fashion",
-        servicePitch: "Content system + landing page",
-        callStatus: "Interested",
-        leadStatus: "Proposal Sent",
-        followUpDate: "2026-05-11",
-        expectedValue: 55000,
-        callCount: 3,
-        notes: "Waiting for internal decision"
-      }
-    ]
+    rows: []
   },
   revenue: {
     columns: [
@@ -449,41 +385,7 @@ export const defaultSheets: Record<SheetKey, SheetData> = {
       { id: "paymentMode", label: "Payment Mode", type: "text", width: "130px" },
       { id: "remarks", label: "Remarks", type: "textarea", width: "140px" }
     ],
-    rows: [
-      {
-        id: "revenue-1",
-        entryDate: "2026-05-01",
-        entryType: "Income",
-        sourceName: "Northline CRM",
-        sector: "Creative",
-        category: "CRM",
-        amount: 165000,
-        paymentMode: "Bank Transfer",
-        remarks: "Final payment received"
-      },
-      {
-        id: "revenue-2",
-        entryDate: "2026-05-03",
-        entryType: "Expense",
-        sourceName: "Hosting + tools",
-        sector: "Operations",
-        category: "Software",
-        amount: 18500,
-        paymentMode: "Card",
-        remarks: "Subscriptions and VPS"
-      },
-      {
-        id: "revenue-3",
-        entryDate: "2026-05-04",
-        entryType: "Personal Use",
-        sourceName: "Owner withdrawal",
-        sector: "Personal",
-        category: "Drawings",
-        amount: 12000,
-        paymentMode: "UPI",
-        remarks: "Personal spend"
-      }
-    ]
+    rows: []
   },
   team: {
     columns: [
@@ -498,22 +400,7 @@ export const defaultSheets: Record<SheetKey, SheetData> = {
       },
       { id: "notes", label: "Notes", type: "textarea", width: "140px" }
     ],
-    rows: [
-      {
-        id: "team-1",
-        memberName: "Karthik",
-        role: "Founder",
-        availability: "Busy",
-        notes: "Handles strategy, sales, and delivery"
-      },
-      {
-        id: "team-2",
-        memberName: "Partner",
-        role: "Operations",
-        availability: "Available",
-        notes: "Handles coordination and finance tracking"
-      }
-    ]
+    rows: []
   },
   content: {
     columns: [
@@ -538,19 +425,7 @@ export const defaultSheets: Record<SheetKey, SheetData> = {
       { id: "leadsGenerated", label: "Leads Generated", type: "number", width: "130px" },
       { id: "notes", label: "Notes", type: "textarea", width: "140px" }
     ],
-    rows: [
-      {
-        id: "content-1",
-        contentTitle: "How we build business websites",
-        platform: "Instagram",
-        stage: "Scheduled",
-        publishDate: "2026-05-09",
-        owner: "Karthik",
-        goal: "Get local business leads",
-        leadsGenerated: 3,
-        notes: "Use before/after screenshots"
-      }
-    ]
+    rows: []
   },
   services: {
     columns: [
@@ -569,41 +444,7 @@ export const defaultSheets: Record<SheetKey, SheetData> = {
       },
       { id: "notes", label: "Notes", type: "textarea", width: "140px" }
     ],
-    rows: [
-      {
-        id: "service-1",
-        serviceName: "Business Website",
-        price: 85000,
-        estimatedTimeline: "3 weeks",
-        projectsDone: 18,
-        avgDeliveryDays: 21,
-        monthlyLeads: 14,
-        status: "Core Offer",
-        notes: "Most common starter offer for local brands"
-      },
-      {
-        id: "service-2",
-        serviceName: "CRM Automation",
-        price: 165000,
-        estimatedTimeline: "5 weeks",
-        projectsDone: 7,
-        avgDeliveryDays: 34,
-        monthlyLeads: 6,
-        status: "High Demand",
-        notes: "Higher ticket setup with better retention"
-      },
-      {
-        id: "service-3",
-        serviceName: "Content Growth System",
-        price: 55000,
-        estimatedTimeline: "2 weeks",
-        projectsDone: 12,
-        avgDeliveryDays: 14,
-        monthlyLeads: 10,
-        status: "Core Offer",
-        notes: "Pairs well with website upsells"
-      }
-    ]
+    rows: []
   },
   shopping: {
     columns: [
@@ -635,32 +476,7 @@ export const defaultSheets: Record<SheetKey, SheetData> = {
       },
       { id: "notes", label: "Notes", type: "textarea", width: "180px" }
     ],
-    rows: [
-      {
-        id: "shopping-1",
-        itemName: "Wireless Mouse",
-        listType: "Company",
-        category: "Office Setup",
-        quantity: 2,
-        estimatedCost: 2400,
-        priority: "Medium",
-        neededBy: "2026-05-12",
-        purchaseStatus: "To Buy",
-        notes: "One for editing desk and one spare"
-      },
-      {
-        id: "shopping-2",
-        itemName: "Notebook and pens",
-        listType: "Personal",
-        category: "Stationery",
-        quantity: 1,
-        estimatedCost: 450,
-        priority: "Low",
-        neededBy: "2026-05-15",
-        purchaseStatus: "Bought",
-        notes: "For daily planning and rough notes"
-      }
-    ]
+    rows: []
   },
   timetable: createSchoolDiaryTimetableSheet(),
   servers: {
@@ -676,47 +492,7 @@ export const defaultSheets: Record<SheetKey, SheetData> = {
       { id: "businessName", label: "Business Name", type: "text", width: "180px" },
       { id: "notes", label: "Notes", type: "textarea", width: "160px" }
     ],
-    rows: [
-      {
-        id: "server-1",
-        serverName: "web-01",
-        ipAddress: "192.168.10.21",
-        environment: "Production",
-        serverRole: "Web",
-        projectName: "Pixelkode Website",
-        mailServer: "mail.pixelkode.com",
-        status: "Healthy",
-        ownerEmail: "ops@pixelkode.com",
-        businessName: "PixelKode",
-        notes: "Primary web server behind load balancer"
-      },
-      {
-        id: "server-2",
-        serverName: "app-01",
-        ipAddress: "192.168.10.22",
-        environment: "Production",
-        serverRole: "Application",
-        projectName: "Northline CRM",
-        mailServer: "smtp.northline.internal",
-        status: "Healthy",
-        ownerEmail: "devops@pixelkode.com",
-        businessName: "Northline",
-        notes: "Application server running Node services"
-      },
-      {
-        id: "server-3",
-        serverName: "db-01",
-        ipAddress: "192.168.10.30",
-        environment: "Production",
-        serverRole: "Database",
-        projectName: "Pixelkode Core",
-        mailServer: "",
-        status: "Healthy",
-        ownerEmail: "dba@pixelkode.com",
-        businessName: "PixelKode",
-        notes: "Primary Postgres instance"
-      }
-    ]
+    rows: []
   },
   databases: {
     columns: [
@@ -731,34 +507,7 @@ export const defaultSheets: Record<SheetKey, SheetData> = {
       { id: "businessName", label: "Business Name", type: "text", width: "180px" },
       { id: "notes", label: "Notes", type: "textarea", width: "160px" }
     ],
-    rows: [
-      {
-        id: "db-1",
-        dbName: "pixelkode_prod",
-        host: "db.prod.pixelkode.internal",
-        port: 5432,
-        engine: "Postgres",
-        projectName: "Pixelkode Core",
-        adminEmail: "dba@pixelkode.com",
-        connString: "postgres://readonly:***@db.prod.pixelkode.internal:5432/pixelkode_prod",
-        ownerEmail: "dba@pixelkode.com",
-        businessName: "PixelKode",
-        notes: "Production primary database"
-      },
-      {
-        id: "db-2",
-        dbName: "northline_crm",
-        host: "db.crm.northline.internal",
-        port: 3306,
-        engine: "MySQL",
-        projectName: "Northline CRM",
-        adminEmail: "dba@northline.com",
-        connString: "mysql://admin:***@db.crm.northline.internal:3306/northline_crm",
-        ownerEmail: "dba@northline.com",
-        businessName: "Northline",
-        notes: "CRM database for Northline project"
-      }
-    ]
+    rows: []
   }
 };
 

@@ -1,3 +1,4 @@
+import { parseDateValue, startOfLocalDay } from "@/lib/date";
 import type { OperationAlert, SheetData, SheetKey, SheetRow } from "@/lib/types";
 
 function toText(value: unknown) {
@@ -9,19 +10,11 @@ function toNumber(value: unknown) {
 }
 
 function parseDate(value: unknown) {
-  const text = toText(value);
-  if (!text) return null;
-
-  const date = new Date(text);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function startOfDay(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  return parseDateValue(toText(value));
 }
 
 function dayDiff(target: Date, reference: Date) {
-  const diff = startOfDay(target).getTime() - startOfDay(reference).getTime();
+  const diff = startOfLocalDay(target).getTime() - startOfLocalDay(reference).getTime();
   return Math.round(diff / 86400000);
 }
 

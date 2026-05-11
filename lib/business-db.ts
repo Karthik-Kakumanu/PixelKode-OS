@@ -68,7 +68,7 @@ function normalizeRow(row: unknown, columns: SheetColumn[], index: number): Shee
   return normalized;
 }
 
-function normalizeSheet(sheet: unknown, fallback: SheetData): SheetData {
+function normalizeSheet(sheet: unknown, fallback: SheetData, sheetKey: SheetKey): SheetData {
   if (!sheet || typeof sheet !== "object") {
     return fallback;
   }
@@ -81,8 +81,24 @@ function normalizeSheet(sheet: unknown, fallback: SheetData): SheetData {
           .filter((column): column is SheetColumn => column !== null)
       : fallback.columns;
 
+  const seenIds = new Set<string>();
   const rows = Array.isArray(candidate.rows)
-    ? candidate.rows.map((row, index) => normalizeRow(row, columns, index))
+    ? candidate.rows
+        .map((row, index) => normalizeRow(row, columns, index))
+        .map((row) => {
+          let id = sanitizeText(row.id);
+
+          if (!id || seenIds.has(id)) {
+            id = `${sheetKey}-${crypto.randomUUID()}`;
+          }
+
+          seenIds.add(id);
+
+          return {
+            ...row,
+            id
+          };
+        })
     : fallback.rows;
 
   return {
@@ -100,8 +116,8 @@ function stripLegacyTeamFields(sheet: SheetData): SheetData {
       delete nextRow[columnId];
     });
 
-    return nextRow;
-  });
+      return nextRow;
+    });
 
   return {
     columns,
@@ -117,19 +133,19 @@ function normalizeSheets(input: unknown): BusinessSheets {
   }
 
   const candidate = input as Record<string, unknown>;
-  const team = stripLegacyTeamFields(normalizeSheet(candidate.team, fallback.team));
+  const team = stripLegacyTeamFields(normalizeSheet(candidate.team, fallback.team, "team"));
 
   return {
-    projects: normalizeSheet(candidate.projects, fallback.projects),
-    leads: normalizeSheet(candidate.leads, fallback.leads),
-    revenue: normalizeSheet(candidate.revenue, fallback.revenue),
+    projects: normalizeSheet(candidate.projects, fallback.projects, "projects"),
+    leads: normalizeSheet(candidate.leads, fallback.leads, "leads"),
+    revenue: normalizeSheet(candidate.revenue, fallback.revenue, "revenue"),
     team,
-    content: normalizeSheet(candidate.content, fallback.content),
-    services: normalizeSheet(candidate.services, fallback.services),
-    shopping: normalizeSheet(candidate.shopping, fallback.shopping),
-    timetable: normalizeTimetableSheet(normalizeSheet(candidate.timetable, fallback.timetable)),
-    servers: normalizeSheet(candidate.servers, fallback.servers),
-    databases: normalizeSheet(candidate.databases, fallback.databases)
+    content: normalizeSheet(candidate.content, fallback.content, "content"),
+    services: normalizeSheet(candidate.services, fallback.services, "services"),
+    shopping: normalizeSheet(candidate.shopping, fallback.shopping, "shopping"),
+    timetable: normalizeTimetableSheet(normalizeSheet(candidate.timetable, fallback.timetable, "timetable")),
+    servers: normalizeSheet(candidate.servers, fallback.servers, "servers"),
+    databases: normalizeSheet(candidate.databases, fallback.databases, "databases")
   };
 }
 

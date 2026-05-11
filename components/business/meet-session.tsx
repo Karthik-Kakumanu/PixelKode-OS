@@ -137,17 +137,13 @@ export function MeetSession() {
           calendarLink: string | null;
           hostEmail: string | null;
           meetLink: string;
+          scheduledAt: string | null;
         };
       };
 
       if (!response.ok || !payload.meeting) {
         throw new Error(payload.error ?? "Failed to create meeting.");
       }
-
-      const scheduledAt =
-        mode === "scheduled" && scheduledDate && scheduledTime
-          ? new Date(`${scheduledDate}T${scheduledTime}:00`).toISOString()
-          : null;
 
       const record: MeetSessionRecord = {
         id: crypto.randomUUID(),
@@ -158,7 +154,7 @@ export function MeetSession() {
         meetLink: payload.meeting.meetLink,
         calendarLink: payload.meeting.calendarLink,
         createdAt: new Date().toISOString(),
-        scheduledAt
+        scheduledAt: payload.meeting.scheduledAt
       };
 
       setHistory((current) => [record, ...current].slice(0, 12));

@@ -51,11 +51,11 @@ import {
   buildTeamCapacityData,
   buildTimetableCoverageData
 } from "@/lib/analytics";
+import { formatLocalDateKey, parseDateValue } from "@/lib/date";
 import { type MeetSessionRecord, readMeetHistory } from "@/lib/meet-session-store";
 import { getStatusClasses } from "@/lib/sheet-ui";
 import { useBusinessStore } from "@/lib/store";
 import { cn, formatCompactNumber, formatCurrency } from "@/lib/utils";
-import { utils, writeFile } from "xlsx";
 
 const progressColors = ["#ff5fa2", "#7c6cff", "#1cc8c0", "#ff9b54", "#3b82f6"];
 const heroIcons = [FolderKanban, CircleDollarSign, ArrowUpRight, Megaphone];
@@ -141,7 +141,29 @@ export function DashboardView() {
   const monitoringMetrics = metrics.filter((metric) =>
     ["Shopping Queue", "Infra Coverage", "Timetable Slots", "Live Services"].includes(metric.label)
   );
-  function downloadDashboardWorkbook() {
+  const todayColumnKey = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][referenceNow.getDay()];
+  const activeTimetableEntry = timetable.find((row) => {
+    const currentText = String(row[todayColumnKey] ?? "").trim();
+    if (!currentText) return false;
+
+    const rangeMatch = /^(\d{1,2}):(\d{2})\s*(AM|PM)\s*-\s*(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(String(row.timeRange ?? ""));
+    if (!rangeMatch) return false;
+
+    const toMinutes = (hourText: string, minuteText: string, meridiem: string) => {
+      const baseHour = Number(hourText) % 12;
+      const adjustedHour = meridiem.toUpperCase() === "PM" ? baseHour + 12 : baseHour;
+      return adjustedHour * 60 + Number(minuteText);
+    };
+
+    const startMinutes = toMinutes(rangeMatch[1], rangeMatch[2], rangeMatch[3]);
+    const endMinutes = toMinutes(rangeMatch[4], rangeMatch[5], rangeMatch[6]);
+    const currentMinutes = referenceNow.getHours() * 60 + referenceNow.getMinutes();
+
+    return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+  });
+
+  async function downloadDashboardWorkbook() {
+    const { utils, writeFile } = await import("xlsx");
     const workbook = utils.book_new();
     const workbookSheets = [
       { name: "Projects", data: projects },
@@ -175,14 +197,10 @@ export function DashboardView() {
     .sort((left, right) => Number(right.leadsGenerated ?? 0) - Number(left.leadsGenerated ?? 0))[0];
   // Accurate Today's Follow-Ups
   function isToday(dateString: string | number | boolean | null | undefined) {
-    if (!dateString || typeof dateString === 'boolean') return false;
-    const today = new Date();
-    const date = new Date(dateString);
-    return (
-      date.getFullYear() === today.getFullYear() &&
-      date.getMonth() === today.getMonth() &&
-      date.getDate() === today.getDate()
-    );
+    if (!dateString || typeof dateString === "boolean") return false;
+    const date = parseDateValue(String(dateString));
+    if (!date) return false;
+    return formatLocalDateKey(date) === formatLocalDateKey(new Date());
   }
 
   const todaysFollowUps = leads.filter((row) => isToday(row.followUpDate)).slice(0, 10);
@@ -350,7 +368,7 @@ export function DashboardView() {
 
       <Card className="overflow-hidden rounded-[36px] border-white/80 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.18),transparent_26%),radial-gradient(circle_at_bottom_right,rgba(56,189,248,0.16),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96))] p-0 shadow-[0_36px_100px_rgba(15,23,42,0.16)]">
         <div className="px-7 py-8 lg:px-9 lg:py-9">
-          <div className="grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(560px,0.95fr)] lg:items-start">
+          <div className="grid gap-8 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.15fr)] xl:items-start">
             <div className="space-y-6">
               <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500 shadow-sm">
                 <Sparkles className="h-3.5 w-3.5 text-amber-500" />
@@ -365,9 +383,14 @@ export function DashboardView() {
               <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
                 <span className="rounded-full bg-white px-3 py-1 shadow-sm">Live now</span>
                 <span>{now ? now.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "Syncing..."}</span>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">
+                  {activeTimetableEntry
+                    ? `${String(activeTimetableEntry.timeRange ?? "")}: ${String(activeTimetableEntry[todayColumnKey] ?? "")}`
+                    : "No active timetable block right now"}
+                </span>
               </div>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
               {heroMetrics.map((metric, index) => {
                 const Icon = heroIcons[index];
 
@@ -381,7 +404,7 @@ export function DashboardView() {
                         </div>
                       </div>
                       <div className="min-w-0">
-                        <h3 className="whitespace-nowrap text-[clamp(1.65rem,2.2vw,2.45rem)] font-semibold leading-none tracking-[-0.04em] text-slate-950">
+                        <h3 className="text-[clamp(1.65rem,2.2vw,2.45rem)] font-semibold leading-none tracking-[-0.04em] text-slate-950 break-words">
                           {metric.value}
                         </h3>
                       </div>

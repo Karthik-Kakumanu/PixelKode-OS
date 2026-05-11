@@ -20,6 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { formatLocalDateKey } from "@/lib/date";
 import { getColumnIcon, getColumnOptions, getOptionClasses, getRequiredColumns } from "@/lib/sheet-ui";
 import { useBusinessStore } from "@/lib/store";
 import type { CellValue, ColumnType, SheetColumn, SheetData, SheetKey } from "@/lib/types";
@@ -132,7 +133,7 @@ function toDayString(value: unknown) {
 
 function getTimetableReferenceDate(now: Date) {
   const reference = new Date(now);
-  if (now.getHours() > 21 || (now.getHours() === 21 && now.getMinutes() >= 0)) {
+  if (now.getHours() > 22 || (now.getHours() === 22 && now.getMinutes() >= 0)) {
     reference.setDate(reference.getDate() + 1);
   }
   reference.setHours(0, 0, 0, 0);
@@ -154,7 +155,7 @@ function formatTimetableHeader(columnId: string, fallbackLabel: string, now: Dat
 }
 
 function buildQuickViews(sheetKey: SheetKey): QuickView[] {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = formatLocalDateKey(new Date());
 
   switch (sheetKey) {
     case "projects":
@@ -985,6 +986,11 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
                                   type={column.type === "number" ? "number" : column.type === "date" ? "date" : "text"}
                                   value={String(value ?? "")}
                                   onChange={(event) => updateCell(sheetKey, rowIndex, column.id, castValue(column.type, event.target.value))}
+                                  onWheel={(event) => {
+                                    if (column.type === "number") {
+                                      event.currentTarget.blur();
+                                    }
+                                  }}
                                   suppressHydrationWarning
                                   className={`${getCellClasses(column, value)} ${column.id === "completionPercent" ? "pr-8" : ""}`}
                                   {...(column.type === "number" ? getNumberInputBounds(sheetKey, row, column.id) : {})}

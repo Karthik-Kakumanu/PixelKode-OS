@@ -3,6 +3,7 @@
 import { create } from "zustand";
 
 import { createDefaultSheets, normalizeTimetableSheet, timetableDayColumnIds } from "@/lib/data";
+import { formatLocalDateKey, getUpcomingSaturdayDateKey } from "@/lib/date";
 import { deriveOperationalAlerts } from "@/lib/operations";
 import type { CellValue, OperationAlert, SheetColumn, SheetData, SheetKey, SheetRow } from "@/lib/types";
 
@@ -41,6 +42,18 @@ const LOCAL_PENDING_KEY = "pixelkode_os_pending_sheets";
 const LOCAL_READ_ALERTS_KEY = "pixelkode_os_read_alert_ids";
 const LOCAL_THEME_KEY = "pixelkode_os_theme";
 const LOCAL_TIMETABLE_ROLLOVER_KEY = "pixelkode_os_timetable_rollover_date";
+const rowIdPrefixes: Record<SheetKey, string> = {
+  projects: "project",
+  leads: "lead",
+  revenue: "revenue",
+  team: "team",
+  content: "content",
+  services: "service",
+  shopping: "shopping",
+  timetable: "slot",
+  servers: "server",
+  databases: "database"
+};
 
 let alertRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -116,8 +129,12 @@ function readStoredTheme() {
   }
 }
 
-function formatDateKey(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+function createRowId(prefix: string) {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function startOfDay(date: Date) {
@@ -132,7 +149,7 @@ function addDays(date: Date, days: number) {
 
 function getMostRecentlyCompletedPlannerDate(now: Date) {
   const today = startOfDay(now);
-  const afterCutoff = now.getHours() > 21 || (now.getHours() === 21 && now.getMinutes() >= 0);
+  const afterCutoff = now.getHours() > 22 || (now.getHours() === 22 && now.getMinutes() >= 0);
   return afterCutoff ? today : addDays(today, -1);
 }
 
@@ -179,7 +196,7 @@ function clearTimetableDayColumn(
 
 function applyTimetableRollover(sheets: Record<SheetKey, SheetData>) {
   const completedDate = getMostRecentlyCompletedPlannerDate(new Date());
-  const completedDateKey = formatDateKey(completedDate);
+  const completedDateKey = formatLocalDateKey(completedDate);
   const storedMarker = readTimetableRolloverMarker();
 
   if (storedMarker === completedDateKey) {
@@ -216,7 +233,7 @@ function normalizeSyncText(value: unknown) {
 }
 
 function makeEmptyRow(columns: SheetColumn[], prefix: string, length: number): SheetRow {
-  const nextRow: SheetRow = { id: `${prefix}-${length + 1}` };
+  const nextRow: SheetRow = { id: createRowId(prefix) };
 
   columns.forEach((column) => {
     if (column.id === "id") return;
@@ -227,7 +244,7 @@ function makeEmptyRow(columns: SheetColumn[], prefix: string, length: number): S
 }
 
 function makeAssistantRow(columns: SheetColumn[], prefix: string, length: number): SheetRow {
-  const nextRow: SheetRow = { id: `${prefix}-${length + 1}` };
+  const nextRow: SheetRow = { id: createRowId(prefix) };
 
   columns.forEach((column) => {
     if (column.id === "id") return;
@@ -247,19 +264,113 @@ function clampNumber(value: unknown, min = 0, max = Number.POSITIVE_INFINITY) {
   return Math.min(Math.max(parsed, min), max);
 }
 
+function ensureUniqueRowIds(rows: SheetRow[], prefix: string): SheetRow[] {
+  const seen = new Set<string>();
+
+  return rows.map((row) => {
+    let id = String(row.id ?? "").trim();
+
+    if (!id || seen.has(id)) {
+      id = createRowId(prefix);
+    }
+
+    seen.add(id);
+
+    return {
+      ...row,
+      id
+    };
+  });
+}
+
+function normalizeLeadRow(row: SheetRow): SheetRow {
+  return {
+    ...row,
+    callStatus: String(row.callStatus ?? "").trim() || "Not Called",
+    leadStatus: String(row.leadStatus ?? "").trim() || "Fresh",
+    followUpDate: String(row.followUpDate ?? "").trim() || getUpcomingSaturdayDateKey()
+  };
+}
+
+function createProjectFromLead(lead: SheetRow): SheetRow {
+  const leadId = String(lead.id ?? "");
+  const marker = `Converted from lead ${leadId}`;
+  const expectedValue = clampNumber(lead.expectedValue);
+  const businessName = String(lead.businessName ?? "").trim();
+  const contactName = String(lead.contactName ?? "").trim();
+  const category = String(lead.category ?? "").trim();
+  const servicePitch = String(lead.servicePitch ?? "").trim();
+  const notes = String(lead.notes ?? "").trim();
+
+  return {
+    id: createRowId("project"),
+    projectName: businessName || `${contactName || "New"} Project`,
+    clientName: contactName || businessName || "New Client",
+    sector: category,
+    category: servicePitch,
+    domain: "",
+    address: "",
+    projectStatus: "Not Started",
+    paymentStatus: "Pending",
+    projectValue: expectedValue,
+    amountReceived: 0,
+    pendingAmount: expectedValue,
+    completionPercent: 0,
+    startDate: formatLocalDateKey(new Date()),
+    deliveryDate: "",
+    notes: notes ? `${marker} - ${notes}` : marker
+  };
+}
+
+function applyLeadAutomation(sheets: Record<SheetKey, SheetData>) {
+  const leadsSheet = sheets.leads;
+  const projectsSheet = sheets.projects;
+
+  if (!leadsSheet || !projectsSheet) {
+    return sheets;
+  }
+
+  const nextProjects = [...ensureUniqueRowIds(projectsSheet.rows, rowIdPrefixes.projects)];
+  const nextLeads = ensureUniqueRowIds(leadsSheet.rows, rowIdPrefixes.leads).reduce<SheetRow[]>((result, rawLead) => {
+    const lead = normalizeLeadRow(rawLead);
+    const leadStatus = String(lead.leadStatus ?? "");
+
+    if (leadStatus === "Dropped") {
+      return result;
+    }
+
+    if (leadStatus === "Converted") {
+      const marker = `Converted from lead ${String(lead.id ?? "")}`;
+      const alreadyExists = nextProjects.some((project) => String(project.notes ?? "").includes(marker));
+
+      if (!alreadyExists) {
+        nextProjects.unshift(createProjectFromLead(lead));
+      }
+    }
+
+    result.push(lead);
+    return result;
+  }, []);
+
+  return {
+    ...sheets,
+    leads: {
+      ...leadsSheet,
+      rows: nextLeads
+    },
+    projects: {
+      ...projectsSheet,
+      rows: ensureUniqueRowIds(nextProjects, rowIdPrefixes.projects)
+    }
+  };
+}
+
 function syncProjectDerivedFields(rows: SheetRow[]) {
   return rows.map<SheetRow>((row) => {
     const projectValue = clampNumber(row.projectValue);
     const amountReceived = clampNumber(row.amountReceived, 0, projectValue);
     const completionPercent = clampNumber(row.completionPercent, 0, 100);
     const pendingAmount = Math.max(projectValue - amountReceived, 0);
-    const paymentStatus =
-      amountReceived >= projectValue && projectValue > 0
-        ? "Paid"
-        : amountReceived > 0
-          ? "Partially Paid"
-          : "Pending";
-    const projectStatus = completionPercent >= 100 ? "Completed" : row.projectStatus;
 
     return {
       ...row,
@@ -267,8 +378,8 @@ function syncProjectDerivedFields(rows: SheetRow[]) {
       amountReceived,
       completionPercent,
       pendingAmount,
-      paymentStatus,
-      projectStatus
+      paymentStatus: row.paymentStatus,
+      projectStatus: row.projectStatus
     };
   });
 }
@@ -289,9 +400,9 @@ function syncProjectSheet(sheets: Record<SheetKey, SheetData>) {
 }
 
 function syncRevenueFromProjects(sheets: Record<SheetKey, SheetData>) {
-  const syncedSheets = syncProjectSheet(sheets);
+  const syncedSheets = syncProjectSheet(applyLeadAutomation(sheets));
   const projectsSheet = syncedSheets.projects;
-  const revenueSheet = sheets.revenue;
+  const revenueSheet = syncedSheets.revenue;
 
   if (!projectsSheet || !revenueSheet) {
     return syncedSheets;
@@ -371,8 +482,6 @@ async function persistSheets(sheets: Record<SheetKey, SheetData>, set: (partial:
 function queuePersist(sheets: Record<SheetKey, SheetData>, set: (partial: Partial<BusinessStore>) => void) {
   queuedSheets = sheets;
   set({ isSaving: true, error: "" });
-  writeStoredSheets(LOCAL_CACHE_KEY, sheets);
-  writeStoredSheets(LOCAL_PENDING_KEY, sheets);
 
   if (saveTimer) {
     clearTimeout(saveTimer);
@@ -387,6 +496,9 @@ function queuePersist(sheets: Record<SheetKey, SheetData>, set: (partial: Partia
       set({ isSaving: false });
       return;
     }
+
+    writeStoredSheets(LOCAL_CACHE_KEY, nextSheets);
+    writeStoredSheets(LOCAL_PENDING_KEY, nextSheets);
 
     if (typeof navigator !== "undefined" && !navigator.onLine) {
       set({ isSaving: false, error: "Offline mode active. Changes are saved on this device and will sync automatically." });
@@ -416,8 +528,13 @@ function ensureAllSheetsPresent(sheets: Record<SheetKey, SheetData> | null | und
   const merged: Record<SheetKey, SheetData> = { ...defaults } as Record<SheetKey, SheetData>;
 
   Object.keys(sheets).forEach((k) => {
-    // @ts-ignore - runtime key check
-    merged[k as SheetKey] = sheets[k as SheetKey];
+    const sheetKey = k as SheetKey;
+    const nextSheet = sheets[sheetKey];
+
+    merged[sheetKey] = {
+      ...nextSheet,
+      rows: ensureUniqueRowIds(nextSheet.rows, rowIdPrefixes[sheetKey])
+    };
   });
 
   merged.timetable = normalizeTimetableSheet(merged.timetable);
@@ -428,12 +545,12 @@ function ensureAllSheetsPresent(sheets: Record<SheetKey, SheetData> | null | und
 function getNextPlannerRefreshDelay() {
   const now = new Date();
   const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
-  const nextNinePmToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 21, 0, 0, 0);
-  const nextNinePm = now.getTime() < nextNinePmToday.getTime()
-    ? nextNinePmToday
-    : new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 21, 0, 0, 0);
+  const nextCutoffToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 22, 0, 0, 0);
+  const nextCutoff = now.getTime() < nextCutoffToday.getTime()
+    ? nextCutoffToday
+    : new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 22, 0, 0, 0);
 
-  return Math.max(Math.min(nextMidnight.getTime(), nextNinePm.getTime()) - now.getTime(), 1000);
+  return Math.max(Math.min(nextMidnight.getTime(), nextCutoff.getTime()) - now.getTime(), 1000);
 }
 
 function scheduleAlertRefresh(get: () => BusinessStore, set: (partial: Partial<BusinessStore>) => void) {
@@ -584,7 +701,7 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       ...get().sheets,
       [sheet]: {
         ...current,
-        rows: [...current.rows, makeEmptyRow(current.columns, sheet, current.rows.length)]
+        rows: [...current.rows, makeEmptyRow(current.columns, rowIdPrefixes[sheet], current.rows.length)]
       }
     };
     const sheets = syncRevenueFromProjects(nextSheets);
@@ -597,8 +714,8 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     const current = get().sheets[sheet];
     const nextRow = {
       ...(keepUnspecifiedEmpty
-        ? makeAssistantRow(current.columns, sheet, current.rows.length)
-        : makeEmptyRow(current.columns, sheet, current.rows.length)),
+        ? makeAssistantRow(current.columns, rowIdPrefixes[sheet], current.rows.length)
+        : makeEmptyRow(current.columns, rowIdPrefixes[sheet], current.rows.length)),
       ...values
     };
     const nextSheets = {

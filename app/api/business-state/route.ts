@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
 import {
-  assertDatabaseConfigured,
   getBusinessState,
   saveBusinessState,
   validateSheetPayload
@@ -18,7 +17,6 @@ export async function GET() {
       return unauthorizedResponse();
     }
 
-    assertDatabaseConfigured();
     const sheets = await getBusinessState();
     return NextResponse.json({ sheets }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
@@ -37,7 +35,6 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "Invalid content type." }, { status: 415 });
     }
 
-    assertDatabaseConfigured();
     const body = await request.json();
     validateSheetPayload(body);
     const sheets = await saveBusinessState(body?.sheets);

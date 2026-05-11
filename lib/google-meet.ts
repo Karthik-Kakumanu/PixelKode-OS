@@ -250,6 +250,52 @@ function addMinutesIso(isoString: string, minutes: number) {
   return new Date(date.getTime() + minutes * 60_000).toISOString();
 }
 
+function getTimeZoneOffsetMilliseconds(date: Date, timeZone: string) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  });
+  const parts = formatter.formatToParts(date);
+  const lookup = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const asUtc = Date.UTC(
+    Number(lookup.year),
+    Number(lookup.month) - 1,
+    Number(lookup.day),
+    Number(lookup.hour),
+    Number(lookup.minute),
+    Number(lookup.second)
+  );
+
+  return asUtc - date.getTime();
+}
+
+function convertZonedLocalDateTimeToIso(localDateTime: string, timeZone: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(localDateTime);
+  if (!match) {
+    throw new Error("Invalid scheduled date and time.");
+  }
+
+  const [, year, month, day, hour, minute, second = "00"] = match;
+  const initialUtcGuess = new Date(
+    Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second))
+  );
+  const initialOffset = getTimeZoneOffsetMilliseconds(initialUtcGuess, timeZone);
+  let resolved = new Date(initialUtcGuess.getTime() - initialOffset);
+  const correctedOffset = getTimeZoneOffsetMilliseconds(resolved, timeZone);
+
+  if (correctedOffset !== initialOffset) {
+    resolved = new Date(initialUtcGuess.getTime() - correctedOffset);
+  }
+
+  return resolved.toISOString();
+}
+
 async function pollEventForMeetLink(accessToken: string, eventId: string) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`, {
@@ -287,7 +333,11 @@ export async function createGoogleMeetEvent({
   title
 }: CreateMeetArgs) {
   const tokens = await getValidGoogleAccessToken();
-  const startDateTime = isInstant ? new Date().toISOString() : scheduledAt;
+  const startDateTime = isInstant
+    ? new Date().toISOString()
+    : scheduledAt
+      ? convertZonedLocalDateTimeToIso(scheduledAt, timezone)
+      : undefined;
 
   if (!startDateTime) {
     throw new Error("Scheduled date and time are required.");
@@ -342,6 +392,7 @@ export async function createGoogleMeetEvent({
     hostEmail: tokens.email ?? null,
     attendeeEmail: attendeeEmail ?? null,
     meetLink: linked.meetUri,
-    calendarLink: typeof linked.event.htmlLink === "string" ? linked.event.htmlLink : null
+    calendarLink: typeof linked.event.htmlLink === "string" ? linked.event.htmlLink : null,
+    scheduledAt: isInstant ? null : startDateTime
   };
 }

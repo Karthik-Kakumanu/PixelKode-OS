@@ -10,15 +10,24 @@ const InputBase = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<H
   { className, ...props },
   ref
 ) {
+  const handleWheel: React.WheelEventHandler<HTMLInputElement> = (event) => {
+    if ((props.type ?? "text") === "number") {
+      event.currentTarget.blur();
+    }
+
+    props.onWheel?.(event);
+  };
+
   return (
     <input
       ref={ref}
       suppressHydrationWarning
+      {...props}
+      onWheel={handleWheel}
       className={cn(
         "flex h-11 w-full rounded-2xl border border-violet-200 bg-white/60 px-4 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-200",
         className
       )}
-      {...props}
     />
   );
 });
@@ -34,11 +43,18 @@ const PasswordInput = function PasswordInput({ className, ...props }: React.Inpu
       <input
         suppressHydrationWarning
         type={show ? "text" : "password"}
+        {...props}
+        onWheel={(event) => {
+          if ((props.type ?? "password") === "number") {
+            event.currentTarget.blur();
+          }
+
+          props.onWheel?.(event);
+        }}
         className={cn(
           "flex h-11 w-full rounded-2xl border border-violet-200 bg-white/60 px-4 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-200 pr-12",
           className
         )}
-        {...props}
       />
       {hydrated && (
         <button

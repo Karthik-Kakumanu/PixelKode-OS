@@ -44,7 +44,7 @@ export async function POST(request: Request) {
 
     const scheduledAt =
       mode === "scheduled" && body.scheduledDate && body.scheduledTime
-        ? new Date(`${body.scheduledDate}T${body.scheduledTime}:00`).toISOString()
+        ? `${body.scheduledDate}T${body.scheduledTime}:00`
         : undefined;
 
     if (mode === "scheduled" && !scheduledAt) {

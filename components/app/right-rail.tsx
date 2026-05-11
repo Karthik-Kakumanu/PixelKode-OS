@@ -4,6 +4,7 @@ import { AlertTriangle, ArrowUpRight, BellRing, CalendarClock } from "lucide-rea
 import { useEffect, useState } from "react";
 
 import { Card } from "@/components/ui/card";
+import { formatLocalDateKey } from "@/lib/date";
 import { readMeetHistory, type MeetSessionRecord } from "@/lib/meet-session-store";
 import { useBusinessStore } from "@/lib/store";
 import { formatCurrency } from "@/lib/utils";
@@ -42,7 +43,7 @@ export function RightRail() {
   }, []);
 
   const pendingCollections = projectRows.reduce((sum, row) => sum + Number(row.pendingAmount ?? 0), 0);
-  const dueTodayLeads = leadRows.filter((row) => String(row.followUpDate ?? "") === new Date().toISOString().slice(0, 10)).length;
+  const dueTodayLeads = leadRows.filter((row) => String(row.followUpDate ?? "") === formatLocalDateKey(new Date())).length;
   const scheduledContent = contentRows.filter((row) => String(row.stage ?? "") === "Scheduled").length;
   const pendingShopping = shoppingRows.filter((row) => ["To Buy", "Ordered"].includes(String(row.purchaseStatus ?? ""))).length;
   const serverWarnings = serverRows.filter((row) => ["Warning", "Down"].includes(String(row.status ?? ""))).length;
