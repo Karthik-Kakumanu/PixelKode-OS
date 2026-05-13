@@ -1,17 +1,11 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 
 import "@/app/globals.css";
 import { AppProviders } from "@/components/providers/app-providers";
 
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter"
-});
-
 export const metadata: Metadata = {
-  title: "Pixelkode OS",
-  description: "Private business dashboard and operating sheets for Pixelkode.",
+  title: "PixelKode OS | Enterprise Intelligence",
+  description: "Futuristic AI Operating System for PixelKode.",
   icons: {
     icon: "/favicon.svg"
   }
@@ -23,9 +17,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={inter.variable} suppressHydrationWarning>
-      <body className="font-sans antialiased" suppressHydrationWarning>
-        <AppProviders>{children}</AppProviders>
+    <html lang="en" suppressHydrationWarning>
+      <body className="font-sans min-h-screen overflow-x-hidden transition-colors duration-500 antialiased" suppressHydrationWarning>
+        <AppProviders>
+          {children}
+        </AppProviders>
       </body>
     </html>
   );

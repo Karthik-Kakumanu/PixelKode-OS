@@ -74,11 +74,11 @@ export function MeetSession() {
     const incomingError = searchParams.get("error");
 
     if (connected) {
-      setSuccess("Google Meet connected. You can create meetings now.");
+      setSuccess("Google account authorized. You can create meetings now.");
     }
 
     if (incomingError) {
-      setError("Google connection did not finish correctly. Check credentials and try again.");
+      setError("Google authorization did not finish correctly. Check your runtime env vars and try again.");
     }
   }, [searchParams]);
 
@@ -188,17 +188,17 @@ export function MeetSession() {
             <div>
               <h1 className="premium-heading text-2xl font-semibold">Meet Session</h1>
               <p className="mt-1 text-sm text-slate-600">
-                Create instant or scheduled Google Meet sessions and keep the shareable link inside the workspace.
+                Create instant or scheduled Google Meet sessions and keep the shareable link inside the workspace. App credentials configure the integration, and Google account authorization unlocks meeting creation.
               </p>
             </div>
             <div className="rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-sm font-medium text-slate-600 shadow-sm">
               {isLoadingStatus
                 ? "Checking Google status..."
                 : status.connected
-                  ? `Connected: ${status.email ?? "Google account"}`
+                  ? `Authorized: ${status.email ?? "Google account"}`
                   : status.configured
-                    ? "Google not connected"
-                    : "Google not configured"}
+                    ? "Credentials loaded. Google account not authorized yet"
+                    : "Google credentials not loaded"}
             </div>
           </div>
         </div>
@@ -292,17 +292,17 @@ export function MeetSession() {
                   <Button asChild>
                     <a href="/api/google/auth/start">
                       <Link2 className="mr-2 h-4 w-4" />
-                      Connect Google Meet
+                      Authorize Google Account
                     </a>
                   </Button>
                 ) : (
                   <Button disabled>
                     <Link2 className="mr-2 h-4 w-4" />
-                    Add Google credentials first
+                    Add credentials in .env.local first
                   </Button>
                 )}
                 <div className="rounded-2xl border border-white/80 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  Invite mail is optional. If you add it, Google Calendar sends the meeting invite there.
+                  Invite mail is optional. If you add it, Google Calendar sends the meeting invite there. Use `.env.local` for real credentials; `.env.example` is only a template.
                 </div>
               </div>
             </div>

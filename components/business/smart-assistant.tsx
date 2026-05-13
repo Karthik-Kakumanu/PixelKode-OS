@@ -19,6 +19,7 @@ import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { readMeetHistory } from "@/lib/meet-session-store";
 import { getColumnOptions, getPrimaryColumn, getRequiredColumns, normalizeToken } from "@/lib/sheet-ui";
 import { useBusinessStore } from "@/lib/store";
 import type { CellValue, ColumnType, OperationAlert, SheetColumn, SheetData, SheetKey } from "@/lib/types";
@@ -169,6 +170,10 @@ type AssistantIntent =
   | "summary"
   | "pending-amount"
   | "pending-projects"
+  | "convert-lead"
+  | "draft-collections"
+  | "content-plan"
+  | "ceo-report"
   | "attention-today"
   | "weekly-earnings"
   | "cash-flow-blockers"
@@ -200,6 +205,7 @@ type SpeechRecognitionLike = {
   onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
   onerror: ((event: { error?: string }) => void) | null;
   onend: (() => void) | null;
+  onstart: (() => void) | null;
 };
 
 declare global {
@@ -274,7 +280,7 @@ function detectIntent(prompt: string): AssistantIntent | "today-followups" {
     return "count";
   }
 
-  if (/\b(summary|summarize|overview|current status|current state)\b/i.test(lowerPrompt)) {
+  if (/\b(summary|summarize|overview|current status|current state|analyze|analysis|full analysis|entire data|whole data)\b/i.test(lowerPrompt)) {
     return "summary";
   }
 
@@ -300,6 +306,34 @@ function detectIntent(prompt: string): AssistantIntent | "today-followups" {
     )
   ) {
     return "pending-projects";
+  }
+
+  if (
+    /\b(convert (?:this |that )?lead|move (?:this |that )?lead to project|add project from (?:this |that )?lead|create project from lead|turn lead into project)\b/i.test(
+      lowerPrompt
+    )
+  ) {
+    return "convert-lead";
+  }
+
+  if (
+    /\b(pending collections|collection follow[- ]?ups|draft follow[- ]?up messages|draft collection messages|payment follow[- ]?ups|follow[- ]?up messages for pending payments)\b/i.test(
+      lowerPrompt
+    )
+  ) {
+    return "draft-collections";
+  }
+
+  if (
+    /\b(content plan|generate content plan|content calendar|content strategy from services|plan content from leads|content from services and leads)\b/i.test(
+      lowerPrompt
+    )
+  ) {
+    return "content-plan";
+  }
+
+  if (/\b(weekly ceo report|ceo report|weekly report|executive weekly report)\b/i.test(lowerPrompt)) {
+    return "ceo-report";
   }
 
   if (
@@ -415,6 +449,10 @@ function castAssistantValue(column: SheetColumn, rawValue: string): CellValue {
 
 function cleanExtractedValue(value: string) {
   return value.replace(/^["']|["']$/g, "").replace(/^(?:named|called|naming)\s+/i, "").replace(/\s+/g, " ").trim();
+}
+
+function normalizePromptForDedup(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 function matchColumnOption(sheetKey: SheetKey, column: SheetColumn, rawValue: string) {
@@ -1015,6 +1053,7 @@ export function SmartAssistant() {
   const [isListening, setIsListening] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState("");
   const [voiceRepliesEnabled, setVoiceRepliesEnabled] = useState(true);
+  const [aiStatus, setAiStatus] = useState<{ configured: boolean; provider: string; model: string } | null>(null);
 
   useEffect(() => {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
@@ -1024,10 +1063,36 @@ export function SmartAssistant() {
     }
   }, [voiceRepliesEnabled]);
 
+  useEffect(() => {
+    const loadAiStatus = async () => {
+      try {
+        const response = await fetch("/api/ai/status", { cache: "no-store" });
+        if (!response.ok) return;
+        const payload = (await response.json()) as { configured?: boolean; provider?: string; model?: string };
+        setAiStatus({
+          configured: Boolean(payload.configured),
+          provider: payload.provider ?? "AI",
+          model: payload.model ?? ""
+        });
+      } catch {
+        setAiStatus(null);
+      }
+    };
+
+    void loadAiStatus();
+  }, []);
+
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const acceptVoiceTranscriptRef = useRef(false);
+  const isRecognitionActiveRef = useRef(false);
+  const isRecognitionStartingRef = useRef(false);
+  const latestTranscriptRef = useRef("");
+  const silenceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isSubmittingVoiceRef = useRef(false);
+  const suppressVoiceOnEndSubmitRef = useRef(false);
+  const lastSubmittedPromptRef = useRef<{ text: string; time: number } | null>(null);
 
   const currentSheetKey = activeSheetKey ?? inferSheetKey(pathname) ?? "projects";
   const currentSheet = sheets[currentSheetKey];
@@ -1056,12 +1121,57 @@ export function SmartAssistant() {
     speak(text);
   }
 
+  async function requestAIReply(userPrompt: string) {
+    try {
+      const response = await fetch("/api/ai/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          prompt: userPrompt,
+          messages: messages.slice(-8).map((message) => ({
+            role: message.role,
+            content: message.content
+          })),
+          currentSheetKey,
+          pathname,
+          meetHistory: readMeetHistory()
+        })
+      });
+
+      const payload = (await response.json()) as {
+        configured?: boolean;
+        error?: string;
+        message?: string;
+      };
+
+      if (!response.ok || !payload.message) {
+        return {
+          ok: false as const,
+          error: payload.error ?? "AI did not return a response."
+        };
+      }
+
+      return {
+        ok: true as const,
+        message: payload.message
+      };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : "AI request failed."
+      };
+    }
+  }
+
   function startListening() {
     if (typeof window === "undefined") return;
+    if (isRecognitionActiveRef.current || isRecognitionStartingRef.current) return;
     const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
 
     if (!Recognition) {
-      reply("Speech recognition is not available in this browser. You can still type here, or we can wire this to OpenAI speech APIs next.");
+      reply("Speech recognition is not available in this browser. You can still type here, or we can wire this to external speech APIs next.");
       return;
     }
 
@@ -1076,30 +1186,88 @@ export function SmartAssistant() {
           .map((result) => result[0]?.transcript ?? "")
           .join(" ")
           .trim();
+        latestTranscriptRef.current = transcript;
         setLiveTranscript(transcript);
         setPrompt(transcript);
+        if (silenceTimeoutRef.current) {
+          clearTimeout(silenceTimeoutRef.current);
+        }
+        silenceTimeoutRef.current = setTimeout(() => {
+          if (acceptVoiceTranscriptRef.current) {
+            stopListening();
+          }
+        }, 1200);
       };
       recognition.onerror = (event) => {
+        isRecognitionActiveRef.current = false;
+        isRecognitionStartingRef.current = false;
+        if (silenceTimeoutRef.current) {
+          clearTimeout(silenceTimeoutRef.current);
+          silenceTimeoutRef.current = null;
+        }
         setIsListening(false);
         reply(`I hit a voice input issue${event.error ? `: ${event.error}` : ""}. Try again or type your message.`);
       };
       recognition.onend = () => {
+        isRecognitionActiveRef.current = false;
+        isRecognitionStartingRef.current = false;
+        if (silenceTimeoutRef.current) {
+          clearTimeout(silenceTimeoutRef.current);
+          silenceTimeoutRef.current = null;
+        }
         setIsListening(false);
-        setPrompt("");
-        setLiveTranscript("");
         acceptVoiceTranscriptRef.current = false;
+        if (suppressVoiceOnEndSubmitRef.current) {
+          suppressVoiceOnEndSubmitRef.current = false;
+          latestTranscriptRef.current = "";
+          return;
+        }
+        const finalTranscript = latestTranscriptRef.current.trim();
+        if (finalTranscript && !isSubmittingVoiceRef.current) {
+          isSubmittingVoiceRef.current = true;
+          void submitPrompt(finalTranscript).finally(() => {
+            isSubmittingVoiceRef.current = false;
+            latestTranscriptRef.current = "";
+          });
+        } else if (!finalTranscript) {
+          setPrompt("");
+          setLiveTranscript("");
+        }
+      };
+      recognition.onstart = () => {
+        isRecognitionActiveRef.current = true;
+        isRecognitionStartingRef.current = false;
       };
       recognitionRef.current = recognition;
     }
 
     setLiveTranscript("");
+    latestTranscriptRef.current = "";
     acceptVoiceTranscriptRef.current = true;
     setIsListening(true);
-    recognitionRef.current.start();
+    isRecognitionStartingRef.current = true;
+    try {
+      recognitionRef.current.start();
+    } catch (error) {
+      isRecognitionStartingRef.current = false;
+      if (error instanceof DOMException && error.name === "InvalidStateError") {
+        isRecognitionActiveRef.current = true;
+        return;
+      }
+      setIsListening(false);
+      acceptVoiceTranscriptRef.current = false;
+      reply("Voice input could not start right now. Please try again.");
+    }
   }
 
   function stopListening() {
     acceptVoiceTranscriptRef.current = false;
+    isRecognitionStartingRef.current = false;
+    isRecognitionActiveRef.current = false;
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current);
+      silenceTimeoutRef.current = null;
+    }
     recognitionRef.current?.stop();
     setIsListening(false);
   }
@@ -1110,30 +1278,60 @@ export function SmartAssistant() {
 
   useEffect(() => {
     const handleAssistantPrompt = (event: Event) => {
-      const customEvent = event as CustomEvent<{ prompt?: string }>;
+      const customEvent = event as CustomEvent<{ prompt?: string; run?: boolean }>;
       if (!customEvent.detail?.prompt) return;
       setOpen(true);
       setPrompt(customEvent.detail.prompt);
+      if (customEvent.detail.run) {
+        void submitPrompt(customEvent.detail.prompt);
+      }
+    };
+
+    const handleAssistantOpen = () => {
+      setOpen(true);
+      setTimeout(() => inputRef.current?.focus(), 0);
+    };
+
+    const handleAssistantVoice = () => {
+      setOpen(true);
+      setTimeout(() => startListening(), 100);
     };
 
     window.addEventListener("ops-assistant:prompt", handleAssistantPrompt as EventListener);
-    return () => window.removeEventListener("ops-assistant:prompt", handleAssistantPrompt as EventListener);
+    window.addEventListener("ops-assistant:open", handleAssistantOpen);
+    window.addEventListener("ops-assistant:voice", handleAssistantVoice);
+    return () => {
+      window.removeEventListener("ops-assistant:prompt", handleAssistantPrompt as EventListener);
+      window.removeEventListener("ops-assistant:open", handleAssistantOpen);
+      window.removeEventListener("ops-assistant:voice", handleAssistantVoice);
+    };
   }, []);
 
   useEffect(() => {
     return () => {
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current);
+      }
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
       }
     };
   }, []);
 
-
-  const executePrompt = async () => {
-    const trimmed = prompt.trim();
+  const submitPrompt = async (incomingPrompt?: string) => {
+    const trimmed = (incomingPrompt ?? prompt).trim();
     if (!trimmed) return;
 
+    const lastSubmitted = lastSubmittedPromptRef.current;
+    const normalizedPrompt = normalizePromptForDedup(trimmed);
+    if (lastSubmitted && normalizePromptForDedup(lastSubmitted.text) === normalizedPrompt && Date.now() - lastSubmitted.time < 1800) {
+      return;
+    }
+    lastSubmittedPromptRef.current = { text: trimmed, time: Date.now() };
+
     if (isListening) {
+      suppressVoiceOnEndSubmitRef.current = true;
+      latestTranscriptRef.current = "";
       stopListening();
     }
 
@@ -1157,14 +1355,127 @@ export function SmartAssistant() {
 
 
     const intent = detectIntent(trimmed);
+    const aiPreferredIntents = new Set<AssistantIntent | "today-followups">([
+      "greeting",
+      "smalltalk",
+      "generate-ideas",
+      "summary",
+      "pending-amount",
+      "pending-projects",
+      "attention-today",
+      "weekly-earnings",
+      "cash-flow-blockers",
+      "financial-query",
+      "show-overdue",
+      "today-followups"
+    ]);
+    const isQuestionLike = /[?]$|\b(what|which|who|why|how|show|tell|can you|could you|would you|should i|suggest|advice|idea|ideas|strategy|help me|guide me|give me)\b/i.test(
+      trimmed
+    );
+    const looksLikeExplicitMutation = /\b(add|create|delete|remove|edit|update|change|set|mark|convert|move)\b/i.test(trimmed);
+
+    if (isQuestionLike && !looksLikeExplicitMutation) {
+      const aiResult = await requestAIReply(trimmed);
+      if (aiResult.ok) {
+        reply(aiResult.message);
+        return;
+      }
+      reply(`Gemini could not answer right now: ${aiResult.error}`);
+      return;
+    }
+
+    if (aiPreferredIntents.has(intent)) {
+      const aiResult = await requestAIReply(trimmed);
+      if (aiResult.ok) {
+        reply(aiResult.message);
+        return;
+      }
+      if (isQuestionLike) {
+        reply(`Gemini could not answer right now: ${aiResult.error}`);
+        return;
+      }
+    }
+
+    if (intent === "convert-lead") {
+      const leadsSheet = sheets.leads;
+      const projectsSheet = sheets.projects;
+
+      if (!leadsSheet || leadsSheet.rows.length === 0) {
+        reply("There are no leads available to convert right now.");
+        return;
+      }
+
+      const leadMatch = findBestRowMatch(trimmed, "leads", leadsSheet);
+      if (!leadMatch) {
+        reply('Tell me which lead to convert, like "convert lead Acme Dental to project".');
+        return;
+      }
+
+      const statusColumn = leadsSheet.columns.find((column) => column.id === "leadStatus");
+      if (!statusColumn) {
+        reply("I could not find the lead status column to complete the conversion.");
+        return;
+      }
+
+      updateCell("leads", leadMatch.rowIndex, "leadStatus", "Converted");
+      const leadName = String(
+        leadMatch.row.businessName ??
+          leadMatch.row.contactName ??
+          leadMatch.primaryValue ??
+          "Lead"
+      );
+      const currentProjectCount = projectsSheet?.rows.length ?? 0;
+
+      setDraft({});
+      reply(
+        `${leadName} is now marked as Converted. The automation will move it into Projects automatically, and you should see the project list grow from ${currentProjectCount} if this was a new conversion.`
+      );
+      return;
+    }
+
+    if (intent === "draft-collections") {
+      const aiResult = await requestAIReply(
+        `Using the live workspace data, show all pending collections and draft concise follow-up messages for each project with pending payment. Include project name, client name, pending amount, and a WhatsApp-style payment reminder. Original user request: ${trimmed}`
+      );
+      reply(
+        aiResult.ok
+          ? aiResult.message
+          : "I couldn't draft the collection follow-up messages right now. Please check that the AI API key is configured."
+      );
+      return;
+    }
+
+    if (intent === "content-plan") {
+      const aiResult = await requestAIReply(
+        `Create a practical content plan using the services sheet, leads sheet, content sheet, and revenue direction from the workspace. Suggest platform, topic angle, business goal, and why each idea supports conversion. Original user request: ${trimmed}`
+      );
+      reply(
+        aiResult.ok
+          ? aiResult.message
+          : "I couldn't generate the content plan right now. Please check that the AI API key is configured."
+      );
+      return;
+    }
+
+    if (intent === "ceo-report") {
+      const aiResult = await requestAIReply(
+        `Write a weekly CEO report from the entire workspace. Cover projects, leads, revenue, received amount, pending amount, services, content, team, shopping list, timetable, meetings, servers, and databases. Use a crisp executive tone with wins, risks, and next priorities. Original user request: ${trimmed}`
+      );
+      reply(
+        aiResult.ok
+          ? aiResult.message
+          : "I couldn't generate the CEO report right now. Please check that the AI API key is configured."
+      );
+      return;
+    }
 
     if (intent === "greeting") {
-      reply("Hey — what are we looking at today?");
+      reply("Hey, what are we looking at today?");
       return;
     }
 
     if (intent === "smalltalk") {
-      reply("I'm here with you — ask me about your business data, tasks, or just chat naturally and I'll help if I can.");
+      reply("I'm here with you. Ask me about your business data, tasks, or just chat naturally and I'll help if I can.");
       return;
     }
 
@@ -1377,7 +1688,7 @@ export function SmartAssistant() {
         }
 
         setDraft({});
-        reply(`Done — I removed the last ${safeCount} row${safeCount === 1 ? "" : "s"} from ${targetSheetKey}.`);
+        reply(`Done. I removed the last ${safeCount} row${safeCount === 1 ? "" : "s"} from ${targetSheetKey}.`);
         return;
       }
 
@@ -1421,7 +1732,7 @@ export function SmartAssistant() {
       });
 
       setDraft({});
-      reply(`Done — I updated ${rowMatch.primaryValue || singularLabel[targetSheetKey]} in ${targetSheetKey}: ${changedColumns.map((column) => column.label).join(", ")}.`);
+      reply(`Done. I updated ${rowMatch.primaryValue || singularLabel[targetSheetKey]} in ${targetSheetKey}: ${changedColumns.map((column) => column.label).join(", ")}.`);
       return;
     }
 
@@ -1433,12 +1744,16 @@ export function SmartAssistant() {
 
     if (!nextDraft[primaryColumnId]) {
       setDraft(nextDraft);
-      const questionLike = /[?]$|\b(what|which|who|why|how|show|tell|can you|could you|do you)\b/i.test(trimmed);
-      reply(
-        questionLike
-          ? "I’m not sure if you want me to create something or answer something. If you’re asking about your data, try a more direct question and I’ll pull it up."
-          : `Tell me the ${primaryColumn?.label ?? "main name"} and I'll build the rest around it. Example: add project named Website Revamp.`
-      );
+      if (isQuestionLike) {
+        const aiResult = await requestAIReply(trimmed);
+        if (aiResult.ok) {
+          reply(aiResult.message);
+          return;
+        }
+        reply(`Gemini could not answer right now: ${aiResult.error}`);
+        return;
+      }
+      reply(`Tell me the ${primaryColumn?.label ?? "main name"} and I'll build the rest around it. Example: add project named Website Revamp.`);
       return;
     }
 
@@ -1446,8 +1761,8 @@ export function SmartAssistant() {
     setDraft({});
     reply(
       nextMissing.length > 0
-        ? `Done — I added a new ${singularLabel[targetSheetKey]} to ${targetSheetKey}. You can still fill: ${nextMissing.map((column) => column.label).join(", ")}.`
-        : `Done — I added a new ${singularLabel[targetSheetKey]} to ${targetSheetKey}.`
+        ? `Done. I added a new ${singularLabel[targetSheetKey]} to ${targetSheetKey}. You can still fill: ${nextMissing.map((column) => column.label).join(", ")}.`
+        : `Done. I added a new ${singularLabel[targetSheetKey]} to ${targetSheetKey}.`
     );
   };
 
@@ -1461,8 +1776,8 @@ export function SmartAssistant() {
             onClick={() => setOpen(false)}
             className="pointer-events-auto absolute inset-0 bg-[linear-gradient(90deg,rgba(15,23,42,0.02),rgba(15,23,42,0.16))] backdrop-blur-[2px]"
           />
-          <Card className="pointer-events-auto relative mr-4 mt-4 flex h-[calc(100vh-2rem)] w-[min(92vw,680px)] flex-col overflow-hidden rounded-[36px] border-white/70 bg-white/96 p-0 shadow-[0_40px_120px_rgba(15,23,42,0.24)] backdrop-blur-2xl">
-          <div className="border-b border-white/80 bg-[radial-gradient(circle_at_top_left,_rgba(251,191,36,0.18),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(56,189,248,0.16),_transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96))] px-5 py-5">
+          <Card className="pointer-events-auto relative mr-2 mt-2 flex h-[calc(100vh-1rem)] w-[min(96vw,760px)] max-w-[760px] flex-col overflow-hidden rounded-[32px] border-white/70 bg-white/96 p-0 shadow-[0_40px_120px_rgba(15,23,42,0.24)] backdrop-blur-2xl sm:mr-4 sm:mt-4 sm:h-[calc(100vh-2rem)] sm:rounded-[36px]">
+          <div className="border-b border-white/80 bg-[radial-gradient(circle_at_top_left,_rgba(251,191,36,0.18),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(56,189,248,0.16),_transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96))] px-4 py-4 sm:px-5 sm:py-5">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 via-orange-400 to-sky-500 text-white shadow-lg">
@@ -1506,22 +1821,32 @@ export function SmartAssistant() {
               <span className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600">
                 Active target: {currentSheetKey}
               </span>
+              <span
+                className={cn(
+                  "rounded-full border px-3 py-2 text-xs font-semibold",
+                  aiStatus?.configured
+                    ? "border-violet-200 bg-violet-50 text-violet-700"
+                    : "border-slate-200 bg-white text-slate-500"
+                )}
+              >
+                {aiStatus?.configured ? `${aiStatus.provider} connected${aiStatus.model ? ` · ${aiStatus.model}` : ""}` : "AI not connected"}
+              </span>
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col gap-4 p-5">
-            <div className="flex min-h-[520px] flex-1 flex-col rounded-[28px] border border-slate-200 bg-white p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+          <div className="flex min-h-0 flex-1 flex-col gap-4 p-3 sm:p-5">
+            <div className="flex min-h-0 flex-1 flex-col rounded-[28px] border border-slate-200 bg-white p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] sm:p-4">
               <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
                 <Sparkles className="h-3.5 w-3.5" />
                 Conversation
               </div>
-              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-1 pb-1">
                 {messages.map((message) => (
                   <div key={message.id} className={cn("flex", message.role === "user" ? "justify-end" : "justify-start")}>
-                    <div className={cn("flex max-w-[88%] items-end gap-2", message.role === "user" ? "flex-row-reverse" : "flex-row")}>
+                    <div className={cn("flex w-full max-w-[96%] items-end gap-2 sm:gap-3", message.role === "user" ? "ml-auto flex-row-reverse" : "mr-auto flex-row")}>
                       <div
                         className={cn(
-                          "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold uppercase tracking-[0.16em]",
+                          "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold uppercase tracking-[0.16em] sm:h-9 sm:w-9",
                           message.role === "user"
                             ? "bg-slate-900 text-white shadow-sm shadow-slate-300"
                             : "bg-gradient-to-br from-fuchsia-100 to-sky-100 text-slate-600"
@@ -1531,7 +1856,7 @@ export function SmartAssistant() {
                       </div>
                       <div
                         className={cn(
-                          "rounded-[24px] px-4 py-3 text-sm leading-6 whitespace-pre-wrap shadow-sm",
+                          "min-w-0 max-w-[calc(100%-2.75rem)] flex-1 break-words rounded-[22px] px-4 py-3 text-sm leading-7 whitespace-pre-wrap shadow-sm sm:rounded-[24px]",
                           message.role === "user"
                             ? "bg-slate-900 text-white shadow-[0_12px_30px_rgba(15,23,42,0.18)]"
                             : "border border-slate-200 bg-white text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.06)]"
@@ -1545,7 +1870,7 @@ export function SmartAssistant() {
 
                 {isListening || liveTranscript ? (
                   <div className="flex justify-end">
-                    <div className="max-w-[88%] rounded-[24px] border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-800 shadow-sm">
+                    <div className="w-full max-w-[calc(100%-1rem)] rounded-[22px] border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-800 shadow-sm sm:max-w-[calc(100%-3rem)] sm:rounded-[24px]">
                       <div className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em]">
                         <WandSparkles className="h-3.5 w-3.5" />
                         Live transcript
@@ -1574,7 +1899,7 @@ export function SmartAssistant() {
               </div>
             ) : null}
 
-            <div className="flex gap-3 rounded-[24px] border border-violet-100 bg-white p-2 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
+            <div className="flex gap-2 rounded-[22px] border border-violet-100 bg-white p-2 shadow-[0_12px_30px_rgba(15,23,42,0.06)] sm:gap-3 sm:rounded-[24px]">
               <Input
                 ref={inputRef}
                 value={prompt}
@@ -1584,11 +1909,11 @@ export function SmartAssistant() {
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault();
-                    void executePrompt();
+                    void submitPrompt();
                   }
                 }}
               />
-              <Button size="icon" className="h-12 w-12 shrink-0 rounded-2xl bg-slate-900 text-white shadow-[0_16px_40px_rgba(15,23,42,0.2)] hover:bg-slate-800" onClick={() => void executePrompt()} aria-label="Run assistant command">
+              <Button size="icon" className="h-12 w-12 shrink-0 rounded-2xl bg-slate-900 text-white shadow-[0_16px_40px_rgba(15,23,42,0.2)] hover:bg-slate-800" onClick={() => void submitPrompt()} aria-label="Run assistant command">
                 <Send className="h-4 w-4" />
               </Button>
             </div>

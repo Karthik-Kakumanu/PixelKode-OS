@@ -70,7 +70,7 @@ function addProjectAlerts(alerts: OperationAlert[], rows: SheetRow[], today: Dat
       pushAlert(alerts, {
         id: makeAlertId("projects", rowId, "payment-pending"),
         title: `${projectName} has pending collection`,
-        message: `₹${pendingAmount.toLocaleString("en-IN")} is still pending after delivery.`,
+          message: `Rs ${pendingAmount.toLocaleString("en-IN")} is still pending after delivery.`,
         severity: "high",
         sheet: "projects",
         rowId,

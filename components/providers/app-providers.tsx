@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 
+import { CommandPalette } from "@/components/ai-core/command-palette";
 import { SmartAssistant } from "@/components/business/smart-assistant";
 import { useBusinessStore } from "@/lib/store";
 
@@ -20,12 +21,18 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  // Securely toggles the .dark class on the <html> tag for Tailwind CSS
   useEffect(() => {
     if (typeof document === "undefined") return;
 
     const root = document.documentElement;
-    root.classList.toggle("dark", theme === "dark");
-    root.style.colorScheme = theme;
+    if (theme === "dark") {
+      root.classList.add("dark");
+      root.style.colorScheme = "dark";
+    } else {
+      root.classList.remove("dark");
+      root.style.colorScheme = "light";
+    }
   }, [theme]);
 
   useEffect(() => {
@@ -47,7 +54,12 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
     <>
       {children}
-      {pathname === "/login" ? null : <SmartAssistant />}
+      {pathname === "/login" ? null : (
+        <>
+          <CommandPalette />
+          <SmartAssistant />
+        </>
+      )}
     </>
   );
 }

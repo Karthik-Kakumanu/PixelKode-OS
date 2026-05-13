@@ -37,6 +37,8 @@ let queuedSheets: Record<SheetKey, SheetData> | null = null;
 let activeSaveRequest = 0;
 
 const PROJECT_REVENUE_SYNC_SOURCE = "project_income_sync";
+const PROJECT_VALUE_SYNC_SOURCE = "project_value_sync";
+const PROJECT_PENDING_SYNC_SOURCE = "project_pending_sync";
 const LOCAL_CACHE_KEY = "pixelkode_os_cached_sheets";
 const LOCAL_PENDING_KEY = "pixelkode_os_pending_sheets";
 const LOCAL_READ_ALERTS_KEY = "pixelkode_os_read_alert_ids";
@@ -149,7 +151,7 @@ function addDays(date: Date, days: number) {
 
 function getMostRecentlyCompletedPlannerDate(now: Date) {
   const today = startOfDay(now);
-  const afterCutoff = now.getHours() > 22 || (now.getHours() === 22 && now.getMinutes() >= 0);
+  const afterCutoff = now.getHours() > 23 || (now.getHours() === 23 && now.getMinutes() >= 0);
   return afterCutoff ? today : addDays(today, -1);
 }
 
@@ -284,11 +286,15 @@ function ensureUniqueRowIds(rows: SheetRow[], prefix: string): SheetRow[] {
 }
 
 function normalizeLeadRow(row: SheetRow): SheetRow {
+  const callStatus = String(row.callStatus ?? "").trim() || "Not Called";
+  const leadStatus = String(row.leadStatus ?? "").trim() || "Fresh";
+  const followUpDate = String(row.followUpDate ?? "").trim();
+
   return {
     ...row,
-    callStatus: String(row.callStatus ?? "").trim() || "Not Called",
-    leadStatus: String(row.leadStatus ?? "").trim() || "Fresh",
-    followUpDate: String(row.followUpDate ?? "").trim() || getUpcomingSaturdayDateKey()
+    callStatus,
+    leadStatus,
+    followUpDate: followUpDate || (leadStatus === "Fresh" && callStatus === "Not Called" ? getUpcomingSaturdayDateKey() : "")
   };
 }
 
@@ -346,6 +352,8 @@ function applyLeadAutomation(sheets: Record<SheetKey, SheetData>) {
       if (!alreadyExists) {
         nextProjects.unshift(createProjectFromLead(lead));
       }
+
+      return result;
     }
 
     result.push(lead);
@@ -371,6 +379,18 @@ function syncProjectDerivedFields(rows: SheetRow[]) {
     const amountReceived = clampNumber(row.amountReceived, 0, projectValue);
     const completionPercent = clampNumber(row.completionPercent, 0, 100);
     const pendingAmount = Math.max(projectValue - amountReceived, 0);
+    const paymentStatus =
+      projectValue <= 0 || amountReceived <= 0
+        ? "Pending"
+        : pendingAmount <= 0
+          ? "Paid"
+          : "Partially Paid";
+    const projectStatus =
+      completionPercent >= 100
+        ? "Completed"
+        : completionPercent > 0
+          ? "In Progress"
+          : "Not Started";
 
     return {
       ...row,
@@ -378,8 +398,8 @@ function syncProjectDerivedFields(rows: SheetRow[]) {
       amountReceived,
       completionPercent,
       pendingAmount,
-      paymentStatus: row.paymentStatus,
-      projectStatus: row.projectStatus
+      paymentStatus,
+      projectStatus
     };
   });
 }
@@ -399,6 +419,52 @@ function syncProjectSheet(sheets: Record<SheetKey, SheetData>) {
   };
 }
 
+function buildSyncedRevenueRows(projectsSheet: SheetData) {
+  const today = formatLocalDateKey(new Date());
+  const totalProjectValue = projectsSheet.rows.reduce((sum, project) => sum + Number(project.projectValue ?? 0), 0);
+  const totalAmountReceived = projectsSheet.rows.reduce((sum, project) => sum + Number(project.amountReceived ?? 0), 0);
+  const totalPending = projectsSheet.rows.reduce((sum, project) => sum + Number(project.pendingAmount ?? 0), 0);
+
+  return [
+    {
+      id: "sync-project-value",
+      entryDate: today,
+      entryType: "Income",
+      sourceName: "Project Value Snapshot",
+      sector: "Automation",
+      category: "Project Pipeline",
+      amount: totalProjectValue,
+      paymentMode: "Auto",
+      remarks: "Auto-generated from all project values",
+      syncSource: PROJECT_VALUE_SYNC_SOURCE
+    },
+    {
+      id: "sync-project-received",
+      entryDate: today,
+      entryType: "Income",
+      sourceName: "Projects Received Till Date",
+      sector: "Automation",
+      category: "Project Receipts",
+      amount: totalAmountReceived,
+      paymentMode: "Auto",
+      remarks: "Auto-generated from project amount received",
+      syncSource: PROJECT_REVENUE_SYNC_SOURCE
+    },
+    {
+      id: "sync-project-pending",
+      entryDate: today,
+      entryType: "Income",
+      sourceName: "Pending Project Collections",
+      sector: "Automation",
+      category: "Pending Collections",
+      amount: totalPending,
+      paymentMode: "Auto",
+      remarks: "Auto-generated from project pending amounts",
+      syncSource: PROJECT_PENDING_SYNC_SOURCE
+    }
+  ] as SheetRow[];
+}
+
 function syncRevenueFromProjects(sheets: Record<SheetKey, SheetData>) {
   const syncedSheets = syncProjectSheet(applyLeadAutomation(sheets));
   const projectsSheet = syncedSheets.projects;
@@ -408,7 +474,9 @@ function syncRevenueFromProjects(sheets: Record<SheetKey, SheetData>) {
     return syncedSheets;
   }
 
-  const manualRevenueRows = revenueSheet.rows.filter((row) => String(row.syncSource ?? "") !== PROJECT_REVENUE_SYNC_SOURCE);
+  const manualRevenueRows = revenueSheet.rows.filter((row) =>
+    ![PROJECT_REVENUE_SYNC_SOURCE, PROJECT_VALUE_SYNC_SOURCE, PROJECT_PENDING_SYNC_SOURCE].includes(String(row.syncSource ?? ""))
+  );
   const totalAmountReceived = projectsSheet.rows.reduce((sum, project) => sum + Number(project.amountReceived ?? 0), 0);
   const rows = manualRevenueRows.map((row) => {
     const sourceName = normalizeSyncText(row.sourceName);
@@ -438,12 +506,13 @@ function syncRevenueFromProjects(sheets: Record<SheetKey, SheetData>) {
       amount: totalAmountReceived
     };
   });
+  const syncedRevenueRows = buildSyncedRevenueRows(projectsSheet);
 
   return {
     ...syncedSheets,
     revenue: {
       ...revenueSheet,
-      rows
+      rows: [...syncedRevenueRows, ...rows]
     }
   };
 }
@@ -545,10 +614,10 @@ function ensureAllSheetsPresent(sheets: Record<SheetKey, SheetData> | null | und
 function getNextPlannerRefreshDelay() {
   const now = new Date();
   const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
-  const nextCutoffToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 22, 0, 0, 0);
+  const nextCutoffToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 0, 0, 0);
   const nextCutoff = now.getTime() < nextCutoffToday.getTime()
     ? nextCutoffToday
-    : new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 22, 0, 0, 0);
+    : new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 23, 0, 0, 0);
 
   return Math.max(Math.min(nextMidnight.getTime(), nextCutoff.getTime()) - now.getTime(), 1000);
 }

@@ -1,5 +1,5 @@
-import { DashboardView } from "@/components/business/dashboard-view";
+import { DashboardClient } from "./page-client";
 
 export default function DashboardPage() {
-  return <DashboardView />;
+  return <DashboardClient />;
 }

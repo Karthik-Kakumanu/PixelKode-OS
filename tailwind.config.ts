@@ -1,6 +1,7 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
+  // This tells Tailwind to use the "dark" class toggled by your AppProviders
   darkMode: ["class"],
   content: [
     "./app/**/*.{ts,tsx}",
@@ -10,9 +11,11 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: "#0B0F19",
-        card: "#111827",
-        border: "rgba(255,255,255,0.08)",
+        // Linked directly to your globals.css variables for automatic light/dark switching
+        background: "var(--bg-color, #0B0F19)",
+        foreground: "var(--text-color, #f4f4f5)",
+        card: "var(--glass-bg, #111827)",
+        border: "var(--panel-border, rgba(255,255,255,0.08))",
         muted: "#9CA3AF",
         primary: {
           DEFAULT: "#7C3AED",

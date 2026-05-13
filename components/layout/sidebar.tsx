@@ -3,47 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import React from "react";
-import {
-  BriefcaseBusiness,
-  ChartColumnBig,
-  CircleDollarSign,
-  ClipboardList,
-  Clock3,
-  Database,
-  FileText,
-  LayoutDashboard,
-  PanelLeftClose,
-  Server,
-  Sparkles,
-  Video,
-  Users
-} from "lucide-react";
+import { motion } from "framer-motion";
+import { ChevronLeft, Cpu, Grid2x2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { routesByGroup } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 
-const items = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/projects", label: "Projects", icon: BriefcaseBusiness },
-  { href: "/leads", label: "Leads", icon: Sparkles },
-  { href: "/revenue", label: "Revenue", icon: CircleDollarSign },
-  { href: "/team", label: "Team", icon: Users },
-  { href: "/content", label: "Content", icon: FileText },
-  { href: "/services", label: "Services", icon: ChartColumnBig },
-  { href: "/meet-session", label: "Meet Session", icon: Video },
-  { href: "/shopping", label: "Shopping List", icon: ClipboardList },
-  { href: "/timetable", label: "Timetable", icon: Clock3 },
-  { href: "/servers", label: "Servers", icon: Server },
-  { href: "/databases", label: "Databases", icon: Database }
-];
-
-export function Sidebar({
-  mobileOpen,
-  onClose
-}: {
-  mobileOpen: boolean;
-  onClose: () => void;
-}) {
+export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => void }) {
   const pathname = usePathname();
   const [expanded, setExpanded] = React.useState(true);
 
@@ -51,7 +18,7 @@ export function Sidebar({
     <>
       <div
         className={cn(
-          "fixed inset-0 z-40 bg-slate-900/25 backdrop-blur-sm transition-opacity md:hidden",
+          "fixed inset-0 z-40 bg-slate-950/45 backdrop-blur-md transition-opacity md:hidden dark:bg-black/65",
           mobileOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
         )}
         onClick={onClose}
@@ -59,133 +26,182 @@ export function Sidebar({
 
       <aside
         className={cn(
-          "glass-panel fixed inset-y-3 left-3 z-50 flex w-[272px] flex-col rounded-[28px] p-4 transition-transform duration-300 md:hidden",
+          "glass-panel fixed inset-y-3 left-3 z-50 flex w-[240px] flex-col rounded-[28px] p-3 transition-transform duration-300 md:hidden",
           mobileOpen ? "translate-x-0" : "-translate-x-[120%]"
         )}
       >
-        <div className="mb-6 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-gradient text-lg font-semibold text-white">
-              P
-            </div>
-            <div>
-              <p className="text-xs text-slate-500">Private business OS</p>
-              <h2 className="text-lg font-semibold">Pixelkode</h2>
-            </div>
-          </div>
-          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close menu">
-            <PanelLeftClose className="h-4 w-4" />
-          </Button>
+        <SidebarHeader expanded onToggle={onClose} mobile />
+        <div className="mt-5 flex-1 overflow-y-auto pr-1">
+          <SidebarGroups pathname={pathname} expanded onNavigate={onClose} layoutIdPrefix="mobile" />
         </div>
-        <SidebarLinks pathname={pathname} expanded onNavigate={onClose} />
       </aside>
 
       <aside
         className={cn(
-          "glass-panel hidden shrink-0 flex-col rounded-[28px] border-white/70 bg-[radial-gradient(circle_at_top,_rgba(236,72,153,0.12),_transparent_28%),radial-gradient(circle_at_bottom_right,_rgba(56,189,248,0.12),_transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,250,252,0.96))] transition-all duration-300 md:flex",
-          expanded ? "w-[248px] p-4" : "w-[92px] p-3"
+          "glass-panel relative z-40 hidden shrink-0 flex-col rounded-[32px] border-white/50 md:flex",
+          expanded ? "w-[240px] p-3" : "w-[84px] p-3"
         )}
       >
-        <div className="flex h-full flex-col">
-          <div
-            className={cn(
-              "rounded-[24px] border border-white/80 bg-gradient-to-br from-white via-rose-50/75 to-sky-50/85 shadow-[0_20px_45px_rgba(15,23,42,0.08)]",
-              expanded ? "mb-5 p-4" : "mb-5 p-3"
-            )}
-          >
-            <div className={cn("flex items-start gap-3", expanded ? "" : "justify-center")}>
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-fuchsia-500 via-rose-400 to-sky-400 text-base font-semibold text-white shadow-[0_18px_35px_rgba(217,70,239,0.22)]">
-                P
-              </div>
-              {expanded ? (
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <h2 className="truncate text-[1.12rem] font-semibold leading-none tracking-[-0.03em] text-slate-900">
-                        Pixelkode
-                      </h2>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 shrink-0 rounded-2xl border border-white/90 bg-white/90 shadow-sm shadow-fuchsia-100/70"
-                      onClick={() => setExpanded((value) => !value)}
-                      aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
-                    >
-                      <PanelLeftClose className="h-4 w-4 rotate-180 text-slate-600 transition-transform" />
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-
-            {!expanded ? (
-              <div className="mt-3 flex justify-center">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-9 w-9 rounded-2xl border border-white/90 bg-white/90 shadow-sm shadow-fuchsia-100/70"
-                  onClick={() => setExpanded((value) => !value)}
-                  aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
-                >
-                  <PanelLeftClose className="h-4 w-4 text-slate-600 transition-transform" />
-                </Button>
-              </div>
-            ) : null}
-          </div>
-          <div className="flex-1">
-            <SidebarLinks pathname={pathname} expanded={expanded} />
-          </div>
-
+        <SidebarHeader expanded={expanded} onToggle={() => setExpanded((value) => !value)} />
+        <div className="mt-5 flex-1 overflow-y-auto pr-1">
+          <SidebarGroups pathname={pathname} expanded={expanded} layoutIdPrefix="desktop" />
         </div>
+        <SidebarFooter expanded={expanded} />
       </aside>
     </>
   );
 }
 
-function SidebarLinks({
-  pathname,
-  onNavigate,
-  expanded
+function SidebarHeader({
+  expanded,
+  onToggle,
+  mobile = false
 }: {
-  pathname: string;
-  onNavigate?: () => void;
   expanded: boolean;
+  onToggle: () => void;
+  mobile?: boolean;
 }) {
   return (
-    <nav className="space-y-1">
-      {items.map((item) => {
-        const Icon = item.icon;
-        const active = pathname === item.href;
+    <div
+      className={cn(
+        "rounded-[24px] border border-white/50 bg-white/45 p-3 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-white/5",
+        !expanded && !mobile ? "px-2.5" : ""
+      )}
+    >
+      <div className={cn("flex items-center gap-3", !expanded && !mobile ? "justify-center" : "")}>
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-[0_16px_30px_rgba(15,23,42,0.16)] dark:bg-white dark:text-slate-950">
+          <Grid2x2 className="h-4.5 w-4.5" />
+        </div>
 
-          return (
-            <Link
-              key={item.href}
-            href={item.href}
-            onClick={onNavigate}
-            suppressHydrationWarning
-              className={cn(
-                "group flex items-center rounded-[18px] border transition-all duration-200",
-                expanded ? "gap-3 px-3.5 py-3 text-[15px]" : "justify-center px-0 py-3",
-                active
-                  ? "border-white/90 bg-gradient-to-r from-fuchsia-50 via-white to-sky-50 text-slate-950 shadow-[0_14px_30px_rgba(15,23,42,0.08)]"
-                  : "border-transparent text-slate-600 hover:border-white/90 hover:bg-white/80 hover:text-slate-900"
-              )}
-              title={item.label}
-            >
-              <span
-                className={cn(
-                  "flex shrink-0 items-center justify-center rounded-xl",
-                  expanded ? "h-8 w-8" : "h-9 w-9",
-                  active ? "bg-gradient-to-br from-fuchsia-100 to-sky-100 shadow-sm" : "bg-transparent"
-                )}
+        {(expanded || mobile) && (
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-cyan-600 dark:text-cyan-300">Operations Workspace</p>
+                <p className="mt-1 truncate text-sm font-semibold text-slate-950 dark:text-white">Business command center</p>
+                <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-500 dark:text-zinc-400">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.7)]" />
+                  Live workspace
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onToggle}
+                className="h-8 w-8 shrink-0 rounded-xl text-slate-500 hover:bg-white/50 dark:text-zinc-400 dark:hover:bg-white/10"
+                aria-label={mobile ? "Close navigation" : "Collapse navigation"}
               >
-                <Icon className={cn("h-[18px] w-[18px] shrink-0", active ? "text-fuchsia-700" : "text-slate-500 group-hover:text-sky-700")} />
-              </span>
-              {expanded ? <span className="font-medium">{item.label}</span> : null}
-            </Link>
-        );
-      })}
-    </nav>
+                <ChevronLeft className={cn("h-4 w-4 transition-transform", !mobile && !expanded ? "rotate-180" : "")} />
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {!expanded && !mobile && (
+        <div className="mt-4 flex justify-center">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggle}
+            className="h-8 w-8 rounded-xl text-slate-500 hover:bg-white/50 dark:text-zinc-400 dark:hover:bg-white/10"
+            aria-label="Expand navigation"
+          >
+            <ChevronLeft className="h-4 w-4 rotate-180" />
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SidebarGroups({
+  pathname,
+  expanded,
+  onNavigate,
+  layoutIdPrefix
+}: {
+  pathname: string;
+  expanded: boolean;
+  onNavigate?: () => void;
+  layoutIdPrefix: string;
+}) {
+  return (
+    <div className="space-y-5">
+      {Object.entries(routesByGroup).map(([groupTitle, items]) => (
+        <div key={groupTitle}>
+          {expanded ? (
+            <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.24em] text-slate-400 dark:text-zinc-500">
+              {groupTitle}
+            </p>
+          ) : null}
+          <nav className="space-y-1.5">
+            {items.map((item) => {
+              const active = item.href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(item.href);
+              const Icon = item.icon;
+
+              return (
+                <Link
+                  key={`${groupTitle}-${item.label}`}
+                  href={item.href}
+                  onClick={onNavigate}
+                  className={cn(
+                    "group relative flex rounded-2xl transition-all duration-200",
+                    expanded ? "items-center gap-3 px-3 py-3" : "justify-center px-2 py-3",
+                    active ? "text-slate-950 dark:text-white" : "text-slate-600 hover:bg-white/55 dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-white"
+                  )}
+                >
+                  {active ? (
+                    <motion.div
+                      layoutId={`${layoutIdPrefix}-nav-active`}
+                      className="absolute inset-0 rounded-2xl border border-white/60 bg-white/70 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-white/8"
+                      transition={{ type: "spring", stiffness: 360, damping: 30 }}
+                    />
+                  ) : null}
+
+                  <span className="relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-950/5 dark:bg-white/5">
+                    <Icon
+                      className={cn(
+                        "h-[18px] w-[18px] transition-colors",
+                        active ? "text-cyan-600 dark:text-cyan-300" : "text-slate-500 group-hover:text-slate-800 dark:text-zinc-500 dark:group-hover:text-zinc-200"
+                      )}
+                    />
+                  </span>
+
+                  {expanded ? (
+                    <>
+                      <span className="relative z-10 flex-1 text-sm font-medium tracking-wide">{item.label}</span>
+                      {item.href === "/dashboard" ? (
+                        <span className="relative z-10 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-700 dark:text-cyan-300">
+                          Live
+                        </span>
+                      ) : null}
+                    </>
+                  ) : null}
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SidebarFooter({ expanded }: { expanded: boolean }) {
+  return (
+    <div className="mt-5 rounded-[24px] border border-white/50 bg-gradient-to-b from-white/40 to-white/10 p-3 backdrop-blur-xl dark:border-white/10 dark:from-white/6 dark:to-transparent">
+      <div className={cn("flex items-center gap-3", !expanded ? "justify-center" : "")}>
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-700 dark:text-cyan-300">
+          <Cpu className="h-4.5 w-4.5" />
+        </div>
+        {expanded ? (
+          <div>
+            <p className="text-xs font-semibold text-slate-900 dark:text-white">AI engine online</p>
+            <p className="text-[11px] text-slate-500 dark:text-zinc-400">Realtime reasoning, alerts, and automation mesh connected.</p>
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }

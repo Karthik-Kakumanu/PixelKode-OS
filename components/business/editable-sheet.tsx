@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { formatLocalDateKey } from "@/lib/date";
+import { sheetTitles } from "@/lib/data";
 import { getColumnIcon, getColumnOptions, getOptionClasses, getRequiredColumns } from "@/lib/sheet-ui";
 import { useBusinessStore } from "@/lib/store";
 import type { CellValue, ColumnType, SheetColumn, SheetData, SheetKey } from "@/lib/types";
@@ -33,7 +34,6 @@ type QuickView = {
 
 function shouldRenderAsSelect(sheetKey: SheetKey, column: SheetColumn) {
   if (column.type === "select") return true;
-
   return (
     sheetKey === "projects" &&
     ["sector", "category", "domain", "completionPercent"].includes(column.id)
@@ -71,7 +71,7 @@ function getAutoColumnWidth(sheet: SheetData, columnId: string): number {
     maxWidth = Math.max(maxWidth, estimateWidth(value) + 24);
   });
 
-  return Math.min(Math.max(maxWidth, 80), 1400); // Cap at 1400px
+  return Math.min(Math.max(maxWidth, 80), 1400);
 }
 
 function getAutoRowHeight(sheet: SheetData, rowIndex: number): number {
@@ -99,32 +99,29 @@ function quoteCsv(value: string) {
 
 function getNumberInputBounds(sheetKey: SheetKey, row: Record<string, CellValue>, columnId: string) {
   if (sheetKey !== "projects") return {};
-
   if (columnId === "amountReceived") {
     const projectValue = Number(row.projectValue ?? 0);
     return { min: 0, max: Number.isFinite(projectValue) ? projectValue : 0 };
   }
-
   if (columnId === "completionPercent") {
     return { min: 0, max: 100 };
   }
-
   if (columnId === "projectValue") {
     return { min: 0 };
   }
-
   return {};
 }
 
 function getCellClasses(column: SheetColumn, value: CellValue | undefined) {
   const base =
-    "h-11 w-full rounded-2xl border px-3 text-sm text-slate-800 outline-none transition-all focus-visible:ring-2 focus-visible:ring-fuchsia-200";
+    "h-11 w-full rounded-2xl border px-3 text-sm text-slate-800 dark:text-zinc-100 outline-none transition-all focus-visible:ring-2 focus-visible:ring-fuchsia-400 dark:focus-visible:ring-cyan-500/50";
 
   if (column.type === "select") {
-    return `${base} ${getOptionClasses(String(value ?? ""))} shadow-lg`;
+    // UPDATED: Colorful glassmorphism for dropdown cells in dark mode
+    return `${base} ${getOptionClasses(String(value ?? ""))} shadow-lg dark:border-fuchsia-500/40 dark:bg-gradient-to-r dark:from-indigo-900/40 dark:via-purple-900/40 dark:to-fuchsia-900/40 dark:text-fuchsia-50 dark:shadow-[inset_0_0_15px_rgba(192,38,211,0.2)]`;
   }
 
-  return `${base} border-white/70 bg-white/90 shadow-[0_12px_30px_rgba(31,41,55,0.06)]`;
+  return `${base} border-slate-200 dark:border-white/10 bg-white/90 dark:bg-zinc-900 shadow-[0_12px_30px_rgba(31,41,55,0.06)] dark:shadow-[0_12px_30px_rgba(0,0,0,0.4)]`;
 }
 
 function toDayString(value: unknown) {
@@ -151,116 +148,24 @@ function formatTimetableHeader(columnId: string, fallbackLabel: string, now: Dat
   targetDate.setDate(reference.getDate() + delta);
 
   const dateLabel = `${String(targetDate.getDate()).padStart(2, "0")}/${String(targetDate.getMonth() + 1).padStart(2, "0")}/${targetDate.getFullYear()}`;
-  return `${fallbackLabel} · ${dateLabel}`;
+  return `${fallbackLabel} - ${dateLabel}`;
 }
 
 function buildQuickViews(sheetKey: SheetKey): QuickView[] {
   const today = formatLocalDateKey(new Date());
-
   switch (sheetKey) {
-    case "projects":
-      return [
-        { id: "all", label: "All", matches: () => true },
-        {
-          id: "overdue",
-          label: "Overdue",
-          matches: (row) =>
-            toDayString(row.deliveryDate) !== "" &&
-            toDayString(row.deliveryDate) < today &&
-            String(row.projectStatus ?? "") !== "Completed"
-        },
-        {
-          id: "pending-payment",
-          label: "Pending Payment",
-          matches: (row) => Number(row.pendingAmount ?? 0) > 0
-        },
-        {
-          id: "active",
-          label: "Active",
-          matches: (row) => String(row.projectStatus ?? "") === "In Progress"
-        }
-      ];
-    case "leads":
-      return [
-        { id: "all", label: "All", matches: () => true },
-        {
-          id: "due-today",
-          label: "Due Today",
-          matches: (row) => toDayString(row.followUpDate) === today
-        },
-        {
-          id: "overdue",
-          label: "Overdue",
-          matches: (row) => toDayString(row.followUpDate) !== "" && toDayString(row.followUpDate) < today
-        },
-        {
-          id: "proposal",
-          label: "Proposal Sent",
-          matches: (row) => String(row.leadStatus ?? "") === "Proposal Sent"
-        }
-      ];
-    case "content":
-      return [
-        { id: "all", label: "All", matches: () => true },
-        {
-          id: "scheduled",
-          label: "Scheduled",
-          matches: (row) => String(row.stage ?? "") === "Scheduled"
-        },
-        {
-          id: "publishing-today",
-          label: "Publishing Today",
-          matches: (row) => toDayString(row.publishDate) === today
-        }
-      ];
-    case "team":
-      return [
-        { id: "all", label: "All", matches: () => true },
-        {
-          id: "busy",
-          label: "Busy",
-          matches: (row) => String(row.availability ?? "") === "Busy"
-        },
-        {
-          id: "available",
-          label: "Available",
-          matches: (row) => String(row.availability ?? "") === "Available"
-        }
-      ];
-    case "revenue":
-      return [
-        { id: "all", label: "All", matches: () => true },
-        {
-          id: "income",
-          label: "Income",
-          matches: (row) => String(row.entryType ?? "") === "Income"
-        },
-        {
-          id: "expense",
-          label: "Expense",
-          matches: (row) => ["Expense", "Payroll", "Personal Use"].includes(String(row.entryType ?? ""))
-        }
-      ];
-    case "services":
-      return [
-        { id: "all", label: "All", matches: () => true },
-        {
-          id: "core",
-          label: "Core Offer",
-          matches: (row) => String(row.status ?? "") === "Core Offer"
-        },
-        {
-          id: "high-demand",
-          label: "High Demand",
-          matches: (row) => String(row.status ?? "") === "High Demand"
-        }
-      ];
-    default:
-      return [{ id: "all", label: "All", matches: () => true }];
+    case "projects": return [{ id: "all", label: "All", matches: () => true }, { id: "overdue", label: "Overdue", matches: (row) => toDayString(row.deliveryDate) !== "" && toDayString(row.deliveryDate) < today && String(row.projectStatus ?? "") !== "Completed" }, { id: "pending-payment", label: "Pending Payment", matches: (row) => Number(row.pendingAmount ?? 0) > 0 }, { id: "active", label: "Active", matches: (row) => String(row.projectStatus ?? "") === "In Progress" }];
+    case "leads": return [{ id: "all", label: "All", matches: () => true }, { id: "due-today", label: "Due Today", matches: (row) => toDayString(row.followUpDate) === today }, { id: "overdue", label: "Overdue", matches: (row) => toDayString(row.followUpDate) !== "" && toDayString(row.followUpDate) < today }, { id: "proposal", label: "Proposal Sent", matches: (row) => String(row.leadStatus ?? "") === "Proposal Sent" }];
+    case "content": return [{ id: "all", label: "All", matches: () => true }, { id: "scheduled", label: "Scheduled", matches: (row) => String(row.stage ?? "") === "Scheduled" }, { id: "publishing-today", label: "Publishing Today", matches: (row) => toDayString(row.publishDate) === today }];
+    case "team": return [{ id: "all", label: "All", matches: () => true }, { id: "busy", label: "Busy", matches: (row) => String(row.availability ?? "") === "Busy" }, { id: "available", label: "Available", matches: (row) => String(row.availability ?? "") === "Available" }];
+    case "revenue": return [{ id: "all", label: "All", matches: () => true }, { id: "income", label: "Income", matches: (row) => String(row.entryType ?? "") === "Income" }, { id: "expense", label: "Expense", matches: (row) => ["Expense", "Payroll", "Personal Use"].includes(String(row.entryType ?? "")) }];
+    case "services": return [{ id: "all", label: "All", matches: () => true }, { id: "core", label: "Core Offer", matches: (row) => String(row.status ?? "") === "Core Offer" }, { id: "high-demand", label: "High Demand", matches: (row) => String(row.status ?? "") === "High Demand" }];
+    default: return [{ id: "all", label: "All", matches: () => true }];
   }
 }
 
 export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
+  const sheetMeta = sheetTitles[sheetKey];
   const sheet = useBusinessStore((state) => state.sheets[sheetKey]);
   const servicesSheet = useBusinessStore((state) => state.sheets.services);
   const addRow = useBusinessStore((state) => state.addRow);
@@ -314,14 +219,7 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
   } | null>(null);
   const tableContainerRef = useRef<HTMLDivElement | null>(null);
 
-  const clampDimension = (value: number, min = 50, max = 2000) => {
-    return Math.min(Math.max(value, min), max);
-  };
-
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
-
+  useEffect(() => { setIsMounted(true); }, []);
   useEffect(() => {
     setColumnWidths(() =>
       sheet.columns.reduce<Record<string, number>>((result, column) => {
@@ -349,18 +247,11 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
     const handlePointerMove = (event: PointerEvent) => {
       if (columnResizing) {
         const nextWidth = clampDimension(columnResizing.startWidth + event.clientX - columnResizing.startX);
-        setColumnWidths((current) => ({
-          ...current,
-          [columnResizing.columnId]: nextWidth
-        }));
+        setColumnWidths((current) => ({ ...current, [columnResizing.columnId]: nextWidth }));
       }
-
       if (rowResizing) {
         const nextHeight = clampDimension(rowResizing.startHeight + event.clientY - rowResizing.startY, 32, 1200);
-        setRowHeights((current) => ({
-          ...current,
-          [rowResizing.rowIndex]: nextHeight
-        }));
+        setRowHeights((current) => ({ ...current, [rowResizing.rowIndex]: nextHeight }));
       }
     };
 
@@ -370,10 +261,8 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
         if (width != null) {
           updateColumnWidth(sheetKey, columnResizing.columnId, width);
         }
-
         tableContainerRef.current?.releasePointerCapture?.(columnResizing.pointerId);
       }
-
       setColumnResizing(null);
       setRowResizing(null);
       document.body.style.cursor = "";
@@ -399,20 +288,11 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
   const quickViews = useMemo(() => buildQuickViews(sheetKey), [sheetKey]);
   const selectableColumns = useMemo(() => (sheet ? sheet.columns.filter((column) => shouldRenderAsSelect(sheetKey, column)) : []), [sheet, sheetKey]);
   const displayColumns = useMemo(() => {
-    if (!isMounted || sheetKey !== "timetable") {
-      return sheet.columns;
-    }
-
+    if (!isMounted || sheetKey !== "timetable") return sheet.columns;
     const now = new Date();
     return sheet.columns.map((column) => {
-      if (!["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].includes(column.id)) {
-        return column;
-      }
-
-      return {
-        ...column,
-        label: formatTimetableHeader(column.id, column.label, now)
-      };
+      if (!["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].includes(column.id)) return column;
+      return { ...column, label: formatTimetableHeader(column.id, column.label, now) };
     });
   }, [isMounted, sheet.columns, sheetKey]);
 
@@ -423,10 +303,7 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
 
     return rows.filter((row) => {
       const quickView = quickViews.find((item) => item.id === quickViewId);
-      const matchesQuery =
-        query.length === 0 ||
-        columns.some((column) => String(row[column.id] ?? "").toLowerCase().includes(query));
-
+      const matchesQuery = query.length === 0 || columns.some((column) => String(row[column.id] ?? "").toLowerCase().includes(query));
       if (!matchesQuery) return false;
       if (quickView && !quickView.matches(row)) return false;
       if (filterColumnId === "all" || filterValue === "all") return true;
@@ -439,27 +316,21 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
     const columns = sheet?.columns ?? [];
     const column = columns.find((item) => item.id === filterColumnId);
     if (!column) return [];
-
-    const dynamicOptions =
-      sheetKey === "leads" && column.id === "servicePitch"
+    const dynamicOptions = sheetKey === "leads" && column.id === "servicePitch"
         ? (servicesSheet?.rows ?? []).map((row) => String(row.serviceName ?? "")).filter(Boolean)
         : [];
-
     return Array.from(new Set([...getColumnOptions(sheetKey, column), ...dynamicOptions]));
   }, [filterColumnId, servicesSheet?.rows, sheet, sheetKey]);
 
   const sortedRows = useMemo(() => {
     const rows = [...filteredRows];
-    if (sortKey === "none") return rows;
-    if (sortKey === "slNo") return rows;
-
+    if (sortKey === "none" || sortKey === "slNo") return rows;
     const column = sheet.columns.find((item) => item.id === sortKey);
     if (!column) return rows;
 
     return rows.sort((left, right) => {
       const leftValue = normalizeSortValue(left[sortKey]);
       const rightValue = normalizeSortValue(right[sortKey]);
-
       if (leftValue < rightValue) return sortDirection === "asc" ? -1 : 1;
       if (leftValue > rightValue) return sortDirection === "asc" ? 1 : -1;
       return 0;
@@ -482,40 +353,32 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
   };
 
   const setCustomDraft = (rowId: string, columnId: string, value: string) => {
-    setCustomOptionDrafts((current) => ({
-      ...current,
-      [`${rowId}:${columnId}`]: value
-    }));
+    setCustomOptionDrafts((current) => ({ ...current, [`${rowId}:${columnId}`]: value }));
   };
 
   const addCustomOption = (rowId: string, rowIndex: number, column: SheetColumn) => {
     const draftKey = `${rowId}:${column.id}`;
     const nextOption = (customOptionDrafts[draftKey] ?? "").trim();
-
     if (!nextOption) return;
-
     addColumnOption(sheetKey, column.id, nextOption);
     updateCell(sheetKey, rowIndex, column.id, nextOption);
-    setCustomOptionDrafts((current) => ({
-      ...current,
-      [draftKey]: ""
-    }));
+    setCustomOptionDrafts((current) => ({ ...current, [draftKey]: "" }));
   };
 
   if (!isMounted) {
     return (
       <div className="space-y-6" suppressHydrationWarning>
-        <Card className="overflow-hidden p-0">
-          <div className="border-b border-white/70 bg-white/80 px-4 py-3">
+        <Card className="overflow-hidden p-0 border-slate-200 dark:border-white/10 bg-white/50 dark:bg-black/20 backdrop-blur-xl">
+          <div className="border-b border-slate-200 dark:border-white/10 bg-white/80 dark:bg-zinc-900/80 px-4 py-3">
             <div>
-              <h1 className="premium-heading text-2xl font-semibold capitalize">{sheetKey}</h1>
-              <p className="mt-1 text-sm text-slate-600">Preparing workspace...</p>
+              <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">{sheetMeta.title}</h1>
+              <p className="mt-1 text-sm text-slate-600 dark:text-zinc-400">Preparing workspace...</p>
             </div>
           </div>
           <div className="space-y-4 p-4">
-            <div className="h-11 rounded-2xl border border-white/70 bg-white/60" />
-            <div className="overflow-hidden rounded-[22px] border border-white/70 bg-white/45">
-              <div className="h-72 bg-gradient-to-b from-white/60 to-fuchsia-50/30" />
+            <div className="h-11 rounded-2xl border border-slate-200 dark:border-white/10 bg-white/60 dark:bg-zinc-800/60" />
+            <div className="overflow-hidden rounded-[22px] border border-slate-200 dark:border-white/10 bg-white/45 dark:bg-zinc-900/40">
+              <div className="h-72 bg-gradient-to-b from-white/60 to-fuchsia-50/30 dark:from-zinc-900/60 dark:to-zinc-800/30" />
             </div>
           </div>
         </Card>
@@ -526,15 +389,15 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
   if (!sheet) {
     return (
       <div className="space-y-6">
-        <Card className="overflow-hidden p-0">
-          <div className="border-b border-white/70 bg-white/80 px-4 py-3">
+        <Card className="overflow-hidden p-0 border-slate-200 dark:border-white/10 bg-white/50 dark:bg-black/20 backdrop-blur-xl">
+          <div className="border-b border-slate-200 dark:border-white/10 bg-white/80 dark:bg-zinc-900/80 px-4 py-3">
             <div>
-              <h1 className="premium-heading text-2xl font-semibold capitalize">{sheetKey}</h1>
-              <p className="mt-1 text-sm text-slate-600">Sheet not found in workspace.</p>
+              <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">{sheetMeta.title}</h1>
+              <p className="mt-1 text-sm text-slate-600 dark:text-zinc-400">Sheet not found in workspace.</p>
             </div>
           </div>
           <div className="space-y-4 p-4">
-            <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">This sheet is not available. Try reloading or check your workspace configuration.</p>
+            <p className="rounded-2xl bg-rose-50 dark:bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20">This sheet is not available. Try reloading or check your workspace configuration.</p>
           </div>
         </Card>
       </div>
@@ -543,18 +406,18 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
 
   return (
     <div className="space-y-6">
-      <Card className="overflow-hidden p-0">
-        <div className="border-b border-white/70 bg-white/80 px-4 py-3">
+      <Card className="overflow-hidden p-0 border-slate-200 dark:border-white/10 bg-white/50 dark:bg-zinc-950/40 backdrop-blur-xl shadow-xl">
+        <div className="border-b border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-zinc-900/80 px-4 py-3 backdrop-blur-md">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h1 className="premium-heading text-2xl font-semibold capitalize">{sheetKey}</h1>
-              <p className="mt-1 text-sm text-slate-600">Manage rows, filters, and columns with a tighter workspace.</p>
+              <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">{sheetMeta.title}</h1>
+              <p className="mt-1 text-sm text-slate-600 dark:text-zinc-400">{sheetMeta.description}</p>
             </div>
             <div className="flex gap-2">
-              <div className="rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-sm font-medium text-slate-600 shadow-sm">
+              <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-zinc-800/80 px-3 py-2 text-sm font-medium text-slate-600 dark:text-zinc-300 shadow-sm backdrop-blur-sm">
                 {!isLoaded ? "Loading data..." : isSaving ? "Saving changes..." : `${filteredRows.length} visible rows`}
               </div>
-              <Button variant="secondary" size="sm" onClick={() => addRow(sheetKey)}>
+              <Button variant="secondary" size="sm" onClick={() => addRow(sheetKey)} className="dark:bg-white dark:text-black dark:hover:bg-zinc-200">
                 <Plus className="mr-2 h-4 w-4" />
                 Add Row
               </Button>
@@ -563,11 +426,9 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
         </div>
 
         <div className="space-y-4 p-4">
-          {error ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : null}
+          {error ? <p className="rounded-2xl bg-rose-50 dark:bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20">{error}</p> : null}
 
-          <div className="rounded-[26px] border border-white/80 bg-white/90 p-4 shadow-sm space-y-3">
-            {error ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : null}
-            
+          <div className="rounded-[26px] border border-slate-200 dark:border-white/10 bg-white/90 dark:bg-zinc-900 p-4 shadow-sm space-y-3 backdrop-blur-md">
             {/* Row 1: Quick views + Search */}
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex flex-wrap items-center gap-1.5">
@@ -578,8 +439,8 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
                     onClick={() => setQuickViewId(view.id)}
                     className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
                       quickViewId === view.id
-                        ? "border-slate-800 bg-slate-800 text-white"
-                        : "border-slate-200 bg-slate-100 text-slate-600 hover:border-slate-300 hover:bg-slate-200"
+                        ? "border-slate-800 bg-slate-800 text-white dark:border-white dark:bg-white dark:text-black"
+                        : "border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-200 dark:border-white/10 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-white"
                     }`}
                   >
                     {view.label}
@@ -588,11 +449,11 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
               </div>
               
               <div className="relative w-full lg:w-72">
-                <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
                 <Input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  className="h-10 w-full rounded-2xl border border-white/80 bg-white/90 pl-11 pr-4 text-sm text-slate-800"
+                  className="h-10 w-full rounded-2xl border border-slate-200 dark:border-white/10 bg-white/90 dark:bg-zinc-900 pl-11 pr-4 text-sm text-slate-800 dark:text-zinc-200 dark:placeholder-zinc-500"
                   placeholder="Search rows, names, values, notes..."
                 />
               </div>
@@ -601,7 +462,7 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
             {/* Row 2: Filters + Sort */}
             <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
               <div className="relative">
-                <ListFilter className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <ListFilter className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
                 <select
                   value={filterColumnId}
                   onChange={(event) => {
@@ -609,7 +470,8 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
                     setFilterValue("all");
                   }}
                   suppressHydrationWarning
-                  className="h-10 w-full rounded-2xl border border-white/80 bg-white/90 pl-11 pr-4 text-xs text-slate-800 outline-none"
+                  /* UPDATED: Colorful glassmorphism for dropdown cells in dark mode */
+                  className="h-10 w-full rounded-2xl border border-slate-200 dark:border-fuchsia-500/40 bg-white/90 dark:bg-gradient-to-r dark:from-indigo-900/40 dark:via-purple-900/40 dark:to-fuchsia-900/40 pl-11 pr-4 text-xs text-slate-800 dark:text-fuchsia-50 dark:shadow-[inset_0_0_15px_rgba(192,38,211,0.2)] outline-none"
                 >
                   <option value="all">Filter by all columns</option>
                   {selectableColumns.map((column) => (
@@ -621,13 +483,14 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
               </div>
               
               <div className="relative">
-                <Filter className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Filter className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
                 <select
                   value={filterValue}
                   onChange={(event) => setFilterValue(event.target.value)}
                   disabled={filterColumnId === "all"}
                   suppressHydrationWarning
-                  className="h-10 w-full rounded-2xl border border-white/80 bg-white/90 pl-11 pr-4 text-xs text-slate-800 outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                  /* UPDATED: Colorful glassmorphism for dropdown cells in dark mode */
+                  className="h-10 w-full rounded-2xl border border-slate-200 dark:border-fuchsia-500/40 bg-white/90 dark:bg-gradient-to-r dark:from-indigo-900/40 dark:via-purple-900/40 dark:to-fuchsia-900/40 pl-11 pr-4 text-xs text-slate-800 dark:text-fuchsia-50 dark:shadow-[inset_0_0_15px_rgba(192,38,211,0.2)] outline-none disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <option value="all">All values</option>
                   {activeFilterOptions.map((option) => (
@@ -642,7 +505,8 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
                 <select
                   value={sortKey}
                   onChange={(event) => setSortKey(event.target.value)}
-                  className="h-10 flex-1 rounded-2xl border border-white/80 bg-white/90 px-4 text-xs text-slate-800 outline-none"
+                  /* UPDATED: Colorful glassmorphism for dropdown cells in dark mode */
+                  className="h-10 flex-1 rounded-2xl border border-slate-200 dark:border-fuchsia-500/40 bg-white/90 dark:bg-gradient-to-r dark:from-indigo-900/40 dark:via-purple-900/40 dark:to-fuchsia-900/40 px-4 text-xs text-slate-800 dark:text-fuchsia-50 dark:shadow-[inset_0_0_15px_rgba(192,38,211,0.2)] outline-none"
                 >
                   <option value="none">No sorting</option>
                   <option value="slNo">SL. No</option>
@@ -653,11 +517,9 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
                   ))}
                 </select>
                 <Button
-                  variant="outline"
-                  size="sm"
-                  type="button"
+                  variant="outline" size="sm" type="button"
                   onClick={() => setSortDirection((direction) => (direction === "asc" ? "desc" : "asc"))}
-                  className="h-10 rounded-2xl"
+                  className="h-10 rounded-2xl dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
                 >
                   <ArrowUpDown className="h-4 w-4" />
                 </Button>
@@ -671,7 +533,7 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
                   value={newColumnLabel}
                   onChange={(event) => setNewColumnLabel(event.target.value)}
                   placeholder="Column name"
-                  className="h-10 w-full rounded-2xl border border-white/80 bg-white/90 px-4 text-sm text-slate-800"
+                  className="h-10 w-full rounded-2xl border border-slate-200 dark:border-white/10 bg-white/90 dark:bg-zinc-900 px-4 text-sm text-slate-800 dark:text-zinc-200 dark:placeholder-zinc-500"
                 />
               </div>
               
@@ -680,12 +542,11 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
                 onChange={(event) => {
                   const nextType = event.target.value as ColumnType;
                   setNewColumnType(nextType);
-                  if (nextType !== "select") {
-                    setNewColumnOptions("");
-                  }
+                  if (nextType !== "select") setNewColumnOptions("");
                 }}
                 suppressHydrationWarning
-                className="h-10 w-full rounded-2xl border border-white/80 bg-white/90 px-3 text-xs text-slate-800 outline-none"
+                /* UPDATED: Colorful glassmorphism for dropdown cells in dark mode */
+                className="h-10 w-full rounded-2xl border border-slate-200 dark:border-fuchsia-500/40 bg-white/90 dark:bg-gradient-to-r dark:from-indigo-900/40 dark:via-purple-900/40 dark:to-fuchsia-900/40 px-3 text-xs text-slate-800 dark:text-fuchsia-50 dark:shadow-[inset_0_0_15px_rgba(192,38,211,0.2)] outline-none"
               >
                 <option value="text">Text</option>
                 <option value="number">Number</option>
@@ -699,48 +560,29 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
                   value={newColumnOptions}
                   onChange={(event) => setNewColumnOptions(event.target.value)}
                   placeholder="Dropdown options, comma separated"
-                  className="h-10 w-full rounded-2xl border border-white/80 bg-white/90 px-4 text-sm text-slate-800 lg:col-span-2"
+                  className="h-10 w-full rounded-2xl border border-slate-200 dark:border-white/10 bg-white/90 dark:bg-zinc-900 px-4 text-sm text-slate-800 dark:text-zinc-200 dark:placeholder-zinc-500 lg:col-span-2"
                 />
               ) : null}
               
               <Button
                 size="sm"
+                className="h-10 rounded-2xl dark:bg-white dark:text-black dark:hover:bg-zinc-200"
                 onClick={() => {
                   const sanitized = newColumnLabel.trim();
-                  const parsedOptions =
-                    newColumnType === "select"
-                      ? Array.from(
-                          new Set(
-                            newColumnOptions
-                              .split(",")
-                              .map((option) => option.trim())
-                              .filter(Boolean)
-                          )
-                        )
-                      : undefined;
+                  const parsedOptions = newColumnType === "select" ? Array.from(new Set(newColumnOptions.split(",").map((o) => o.trim()).filter(Boolean))) : undefined;
                   if (!sanitized) return;
                   if (newColumnType === "select" && (!parsedOptions || parsedOptions.length === 0)) return;
-                  addColumn(sheetKey, {
-                    id: sanitized.toLowerCase().replace(/\s+/g, "_"),
-                    label: sanitized,
-                    type: newColumnType,
-                    options: parsedOptions,
-                    width: "180px"
-                  });
+                  addColumn(sheetKey, { id: sanitized.toLowerCase().replace(/\s+/g, "_"), label: sanitized, type: newColumnType, options: parsedOptions, width: "180px" });
                   setNewColumnLabel("");
                   setNewColumnOptions("");
                 }}
-                className="h-10 rounded-2xl"
               >
                 Add
               </Button>
               
               <Button
-                variant="outline"
-                size="sm"
-                type="button"
-                onClick={downloadSheetCsv}
-                className="h-10 rounded-2xl"
+                variant="outline" size="sm" type="button" onClick={downloadSheetCsv}
+                className="h-10 rounded-2xl dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
               >
                 <Download className="mr-1.5 h-3.5 w-3.5" />
                 Export
@@ -748,7 +590,7 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
             </div>
           </div>
 
-          <div ref={tableContainerRef} className="overflow-x-auto rounded-[22px] border border-white/70 bg-white/45">
+          <div ref={tableContainerRef} className="overflow-x-auto rounded-[22px] border border-slate-200 dark:border-white/10 bg-white/45 dark:bg-zinc-900/40 backdrop-blur-md">
             <table className="min-w-full table-fixed border-separate border-spacing-0 text-left text-sm">
               <colgroup>
                 <col style={{ width: 72 }} />
@@ -759,24 +601,20 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
               </colgroup>
               <thead>
                 <tr>
-                  <th className="sticky left-0 top-0 z-20 border-b border-white/70 bg-gradient-to-b from-white to-fuchsia-50/90 px-3 py-3 text-left text-sm font-semibold text-slate-700 shadow-sm">
+                  <th className="sticky left-0 top-0 z-20 border-b border-slate-200 dark:border-white/10 bg-gradient-to-b from-white to-fuchsia-50/90 dark:from-zinc-900 dark:to-zinc-800 px-3 py-3 text-left text-sm font-semibold text-slate-700 dark:text-zinc-200 shadow-sm">
                     SL. No
                   </th>
                   {displayColumns.map((column, columnIndex) => {
                     const Icon = getColumnIcon(column.id);
-
                     return (
                       <th
                         key={column.id}
-                        className="group sticky top-0 z-10 border-b border-white/70 bg-gradient-to-b from-white to-fuchsia-50/70 px-3 py-3 text-left text-sm font-semibold text-slate-700"
-                        style={{
-                          width: `${columnWidths[column.id] ?? 180}px`,
-                          minWidth: `${columnWidths[column.id] ?? 180}px`
-                        }}
+                        className="group sticky top-0 z-10 border-b border-slate-200 dark:border-white/10 bg-gradient-to-b from-white to-fuchsia-50/70 dark:from-zinc-900 dark:to-zinc-800 px-3 py-3 text-left text-sm font-semibold text-slate-700 dark:text-zinc-200"
+                        style={{ width: `${columnWidths[column.id] ?? 180}px`, minWidth: `${columnWidths[column.id] ?? 180}px` }}
                       >
                         <div className="relative flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
-                            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-fuchsia-600 shadow-sm">
+                            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white dark:bg-zinc-800 text-fuchsia-600 dark:text-cyan-400 shadow-sm border border-slate-100 dark:border-white/5">
                               <Icon className="h-4 w-4" />
                             </span>
                             <div>
@@ -787,69 +625,35 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
                             </div>
                           </div>
                           <div className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              type="button"
-                              className="h-8 w-8 rounded-xl"
-                              onClick={() => moveColumn(sheetKey, column.id, "left")}
-                              disabled={columnIndex === 0}
-                              aria-label={`Move ${column.label} left`}
-                            >
+                            <Button variant="ghost" size="icon" type="button" className="h-8 w-8 rounded-xl dark:hover:bg-white/10" onClick={() => moveColumn(sheetKey, column.id, "left")} disabled={columnIndex === 0}>
                               <ArrowLeft className="h-4 w-4" />
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              type="button"
-                              className="h-8 w-8 rounded-xl"
-                              onClick={() => moveColumn(sheetKey, column.id, "right")}
-                              disabled={columnIndex === sheet.columns.length - 1}
-                              aria-label={`Move ${column.label} right`}
-                            >
+                            <Button variant="ghost" size="icon" type="button" className="h-8 w-8 rounded-xl dark:hover:bg-white/10" onClick={() => moveColumn(sheetKey, column.id, "right")} disabled={columnIndex === sheet.columns.length - 1}>
                               <ArrowRight className="h-4 w-4" />
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              type="button"
-                              className="h-8 w-8 rounded-xl"
-                              onClick={() => deleteColumn(sheetKey, column.id)}
-                              aria-label={`Delete ${column.label} column`}
-                            >
+                            <Button variant="ghost" size="icon" type="button" className="h-8 w-8 rounded-xl dark:hover:bg-white/10" onClick={() => deleteColumn(sheetKey, column.id)}>
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           </div>
                           <div
                             className="absolute -right-3 top-0 z-40 flex h-full w-6 cursor-col-resize touch-none items-center justify-center"
                             onPointerDown={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              tableContainerRef.current?.setPointerCapture?.(event.pointerId);
-                              setColumnResizing({
-                                columnId: column.id,
-                                startX: event.clientX,
-                                startWidth: columnWidths[column.id] ?? 180,
-                                pointerId: event.pointerId
-                              });
+                              event.preventDefault(); event.stopPropagation(); tableContainerRef.current?.setPointerCapture?.(event.pointerId);
+                              setColumnResizing({ columnId: column.id, startX: event.clientX, startWidth: columnWidths[column.id] ?? 180, pointerId: event.pointerId });
                             }}
                             onDoubleClick={() => {
                               const nextWidth = getAutoColumnWidth(sheet, column.id);
-                              setColumnWidths((prev) => ({
-                                ...prev,
-                                [column.id]: nextWidth
-                              }));
+                              setColumnWidths((prev) => ({ ...prev, [column.id]: nextWidth }));
                               updateColumnWidth(sheetKey, column.id, nextWidth);
                             }}
-                            title="Drag to resize column or double click to auto-fit"
                           >
-                            <div className="h-full w-1 rounded-full bg-slate-300/90 transition group-hover:bg-slate-500 group-hover:shadow-[0_0_0_1px_rgba(71,85,105,0.15)]" />
+                            <div className="h-full w-1 rounded-full bg-slate-300/90 dark:bg-zinc-700 transition group-hover:bg-slate-500 dark:group-hover:bg-cyan-500" />
                           </div>
                         </div>
                       </th>
                     );
                   })}
-                  <th className="sticky right-0 top-0 z-10 w-[110px] border-b border-white/70 bg-gradient-to-b from-white to-sky-50/70 px-2 py-3 text-center text-sm font-semibold text-slate-700">
+                  <th className="sticky right-0 top-0 z-10 w-[110px] border-b border-slate-200 dark:border-white/10 bg-gradient-to-b from-white to-sky-50/70 dark:from-zinc-900 dark:to-zinc-800 px-2 py-3 text-center text-sm font-semibold text-slate-700 dark:text-zinc-200">
                     Actions
                   </th>
                 </tr>
@@ -861,32 +665,14 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
 
                   return (
                     <tr key={String(row.id)} className="group" style={{ height: `${height}px` }}>
-                      <td
-                        className="sticky left-0 z-10 border-b border-white/60 bg-white/95 px-3 py-2 text-sm text-slate-700 shadow-sm"
-                      >
+                      <td className="sticky left-0 z-10 border-b border-slate-200 dark:border-white/10 bg-white/95 dark:bg-zinc-900/95 px-3 py-2 text-sm text-slate-700 dark:text-zinc-200 shadow-sm">
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-semibold">{displayIndex + 1}</span>
                           <div className="flex items-center gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              type="button"
-                              className="h-8 w-8 rounded-xl"
-                              onClick={() => moveRow(sheetKey, rowIndex, rowIndex - 1)}
-                              disabled={rowIndex === 0}
-                              aria-label="Move row up"
-                            >
+                            <Button variant="ghost" size="icon" type="button" className="h-8 w-8 rounded-xl dark:hover:bg-white/10" onClick={() => moveRow(sheetKey, rowIndex, rowIndex - 1)} disabled={rowIndex === 0}>
                               <ArrowUp className="h-4 w-4" />
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              type="button"
-                              className="h-8 w-8 rounded-xl"
-                              onClick={() => moveRow(sheetKey, rowIndex, rowIndex + 1)}
-                              disabled={rowIndex === sheet.rows.length - 1}
-                              aria-label="Move row down"
-                            >
+                            <Button variant="ghost" size="icon" type="button" className="h-8 w-8 rounded-xl dark:hover:bg-white/10" onClick={() => moveRow(sheetKey, rowIndex, rowIndex + 1)} disabled={rowIndex === sheet.rows.length - 1}>
                               <ArrowDown className="h-4 w-4" />
                             </Button>
                           </div>
@@ -894,29 +680,16 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
                         <div
                           className="absolute inset-x-0 bottom-0 h-6 cursor-row-resize"
                           onMouseDown={(event) => {
-                            event.preventDefault();
-                            setRowResizing({
-                              rowIndex,
-                              startY: event.clientY,
-                              startHeight: height
-                            });
+                            event.preventDefault(); setRowResizing({ rowIndex, startY: event.clientY, startHeight: height });
                           }}
-                          onDoubleClick={() => {
-                            setRowHeights((prev) => ({
-                              ...prev,
-                              [rowIndex]: getAutoRowHeight(sheet, rowIndex)
-                            }));
-                          }}
+                          onDoubleClick={() => setRowHeights((prev) => ({ ...prev, [rowIndex]: getAutoRowHeight(sheet, rowIndex) }))}
                         >
-                          <div className="mx-auto h-1 w-12 rounded-full bg-slate-200/70 transition hover:bg-slate-400/90" />
+                          <div className="mx-auto h-1 w-12 rounded-full bg-slate-200/70 dark:bg-white/10 transition hover:bg-slate-400/90 dark:hover:bg-cyan-500/50" />
                         </div>
                       </td>
                       {displayColumns.map((column) => {
                         const value = row[column.id];
-                        const dynamicOptions =
-                          sheetKey === "leads" && column.id === "servicePitch"
-                            ? servicesSheet.rows.map((item) => String(item.serviceName ?? "")).filter(Boolean)
-                            : [];
+                        const dynamicOptions = sheetKey === "leads" && column.id === "servicePitch" ? servicesSheet.rows.map((item) => String(item.serviceName ?? "")).filter(Boolean) : [];
                         const options = Array.from(new Set([...getColumnOptions(sheetKey, column), ...dynamicOptions]));
                         const shouldUseSelect = shouldRenderAsSelect(sheetKey, column);
                         const draftKey = `${String(row.id)}:${column.id}`;
@@ -925,11 +698,8 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
                         return (
                           <td
                             key={column.id}
-                            className="border-b border-white/60 bg-gradient-to-b from-white/50 via-slate-50 to-fuchsia-50 px-2 py-2 align-top group-hover:from-white/80 group-hover:to-fuchsia-50/60"
-                            style={{
-                              width: `${columnWidths[column.id] ?? 180}px`,
-                              minWidth: `${columnWidths[column.id] ?? 180}px`
-                            }}
+                            className="border-b border-slate-200 dark:border-white/10 bg-gradient-to-b from-white/50 via-slate-50 to-fuchsia-50 dark:from-zinc-900/50 dark:via-zinc-800/50 dark:to-zinc-900/50 px-2 py-2 align-top group-hover:from-white/80 group-hover:to-fuchsia-50/60 dark:group-hover:from-zinc-800/80 dark:group-hover:via-zinc-800/80 dark:group-hover:to-zinc-800/80"
+                            style={{ width: `${columnWidths[column.id] ?? 180}px`, minWidth: `${columnWidths[column.id] ?? 180}px` }}
                           >
                             {shouldUseSelect ? (
                               <div className="space-y-2">
@@ -941,35 +711,22 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
                                 >
                                   <option value="">Select</option>
                                   {options.map((option) => (
-                                    <option key={option} value={option}>
-                                      {option}
-                                    </option>
+                                    <option key={option} value={option}>{option}</option>
                                   ))}
                                   <option value="__custom__">Others - Add New</option>
                                 </select>
-
                                 {isCustomMode ? (
                                   <div className="flex gap-2">
                                     <Input
                                       value={customOptionDrafts[draftKey] ?? ""}
                                       onChange={(event) => setCustomDraft(String(row.id), column.id, event.target.value)}
                                       placeholder={`Add new ${column.label}`}
-                                      className="h-10 rounded-xl"
+                                      className="h-10 rounded-xl dark:bg-zinc-900 dark:border-white/10 dark:text-zinc-100"
                                       onKeyDown={(event) => {
-                                        if (event.key === "Enter") {
-                                          event.preventDefault();
-                                          addCustomOption(String(row.id), rowIndex, column);
-                                        }
+                                        if (event.key === "Enter") { event.preventDefault(); addCustomOption(String(row.id), rowIndex, column); }
                                       }}
                                     />
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      className="shrink-0"
-                                      onClick={() => addCustomOption(String(row.id), rowIndex, column)}
-                                    >
-                                      Add
-                                    </Button>
+                                    <Button type="button" size="sm" className="shrink-0 dark:bg-white dark:text-black dark:hover:bg-zinc-200" onClick={() => addCustomOption(String(row.id), rowIndex, column)}>Add</Button>
                                   </div>
                                 ) : null}
                               </div>
@@ -978,7 +735,7 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
                                 value={String(value ?? "")}
                                 onChange={(event) => updateCell(sheetKey, rowIndex, column.id, event.target.value)}
                                 suppressHydrationWarning
-                                className="min-h-[96px] w-full resize-none rounded-2xl border border-white/70 bg-white/90 px-3 py-3 text-sm text-slate-800 outline-none shadow-[0_12px_30px_rgba(31,41,55,0.06)] focus-visible:ring-2 focus-visible:ring-fuchsia-200"
+                                className="min-h-[96px] w-full resize-none rounded-2xl border border-slate-200 dark:border-white/10 bg-white/90 dark:bg-zinc-900 px-3 py-3 text-sm text-slate-800 dark:text-zinc-100 outline-none shadow-[0_12px_30px_rgba(31,41,55,0.06)] dark:shadow-none focus-visible:ring-2 focus-visible:ring-fuchsia-400 dark:focus-visible:ring-cyan-500/50"
                               />
                             ) : (
                               <div className={column.id === "completionPercent" ? "relative" : undefined}>
@@ -986,35 +743,22 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
                                   type={column.type === "number" ? "number" : column.type === "date" ? "date" : "text"}
                                   value={String(value ?? "")}
                                   onChange={(event) => updateCell(sheetKey, rowIndex, column.id, castValue(column.type, event.target.value))}
-                                  onWheel={(event) => {
-                                    if (column.type === "number") {
-                                      event.currentTarget.blur();
-                                    }
-                                  }}
+                                  onWheel={(event) => { if (column.type === "number") event.currentTarget.blur(); }}
                                   suppressHydrationWarning
                                   className={`${getCellClasses(column, value)} ${column.id === "completionPercent" ? "pr-8" : ""}`}
                                   {...(column.type === "number" ? getNumberInputBounds(sheetKey, row, column.id) : {})}
                                 />
                                 {column.id === "completionPercent" ? (
-                                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-slate-500">
-                                    %
-                                  </span>
+                                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-slate-500 dark:text-zinc-400">%</span>
                                 ) : null}
                               </div>
                             )}
                           </td>
                         );
                       })}
-                      <td className="sticky right-0 border-b border-white/60 bg-white/90 px-2 py-2 text-center align-top">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          type="button"
-                          className="h-10 w-10 rounded-2xl"
-                          onClick={() => deleteRow(sheetKey, rowIndex)}
-                          aria-label="Delete row"
-                        >
-                          <Trash2 className="h-4 w-4 text-rose-500" />
+                      <td className="sticky right-0 border-b border-slate-200 dark:border-white/10 bg-white/90 dark:bg-zinc-900/90 px-2 py-2 text-center align-top">
+                        <Button variant="ghost" size="icon" type="button" className="h-10 w-10 rounded-2xl dark:hover:bg-rose-500/10" onClick={() => deleteRow(sheetKey, rowIndex)} aria-label="Delete row">
+                          <Trash2 className="h-4 w-4 text-rose-500 dark:text-rose-400" />
                         </Button>
                       </td>
                     </tr>
@@ -1025,12 +769,12 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
 
             {sortedRows.length === 0 ? (
               <div className="flex flex-col items-center gap-3 px-6 py-14 text-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-gradient-to-br from-fuchsia-200 via-orange-100 to-sky-100 text-fuchsia-600">
+                <div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-gradient-to-br from-fuchsia-200 via-orange-100 to-sky-100 dark:from-zinc-800 dark:to-zinc-800 dark:border dark:border-white/10 text-fuchsia-600 dark:text-cyan-400">
                   <LayoutGrid className="h-6 w-6" />
                 </div>
                 <div>
-                  <p className="text-lg font-semibold text-slate-900">No rows match this view</p>
-                  <p className="mt-1 text-sm text-slate-600">Try a different search or filter, or add a fresh row.</p>
+                  <p className="text-lg font-semibold text-slate-900 dark:text-white">No rows match this view</p>
+                  <p className="mt-1 text-sm text-slate-600 dark:text-zinc-400">Try a different search or filter, or add a fresh row.</p>
                 </div>
               </div>
             ) : null}
