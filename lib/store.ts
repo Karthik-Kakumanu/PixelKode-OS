@@ -175,16 +175,13 @@ function writeTimetableRolloverMarker(value: string) {
   }
 }
 
-function clearTimetableDayColumn(
-  sheets: Record<SheetKey, SheetData>,
-  columnId: (typeof timetableDayColumnIds)[number]
-) {
+function clearEntireTimetable(sheets: Record<SheetKey, SheetData>) {
   const timetable = sheets.timetable;
   if (!timetable) return sheets;
 
   const rows = timetable.rows.map((row) => ({
     ...row,
-    [columnId]: columnId in row ? "" : row[columnId]
+    ...Object.fromEntries(timetableDayColumnIds.map((columnId) => [columnId, ""]))
   }));
 
   return {
@@ -205,14 +202,7 @@ function applyTimetableRollover(sheets: Record<SheetKey, SheetData>) {
     return { sheets, changed: false };
   }
 
-  if (!storedMarker) {
-    writeTimetableRolloverMarker(completedDateKey);
-    return { sheets, changed: false };
-  }
-
-  const weekdayIndex = completedDate.getDay();
-  const columnId = timetableDayColumnIds[(weekdayIndex + 6) % 7];
-  const nextSheets = clearTimetableDayColumn(sheets, columnId);
+  const nextSheets = clearEntireTimetable(sheets);
   writeTimetableRolloverMarker(completedDateKey);
 
   return { sheets: nextSheets, changed: true };
@@ -421,23 +411,9 @@ function syncProjectSheet(sheets: Record<SheetKey, SheetData>) {
 
 function buildSyncedRevenueRows(projectsSheet: SheetData) {
   const today = formatLocalDateKey(new Date());
-  const totalProjectValue = projectsSheet.rows.reduce((sum, project) => sum + Number(project.projectValue ?? 0), 0);
   const totalAmountReceived = projectsSheet.rows.reduce((sum, project) => sum + Number(project.amountReceived ?? 0), 0);
-  const totalPending = projectsSheet.rows.reduce((sum, project) => sum + Number(project.pendingAmount ?? 0), 0);
 
   return [
-    {
-      id: "sync-project-value",
-      entryDate: today,
-      entryType: "Income",
-      sourceName: "Project Value Snapshot",
-      sector: "Automation",
-      category: "Project Pipeline",
-      amount: totalProjectValue,
-      paymentMode: "Auto",
-      remarks: "Auto-generated from all project values",
-      syncSource: PROJECT_VALUE_SYNC_SOURCE
-    },
     {
       id: "sync-project-received",
       entryDate: today,
@@ -449,18 +425,6 @@ function buildSyncedRevenueRows(projectsSheet: SheetData) {
       paymentMode: "Auto",
       remarks: "Auto-generated from project amount received",
       syncSource: PROJECT_REVENUE_SYNC_SOURCE
-    },
-    {
-      id: "sync-project-pending",
-      entryDate: today,
-      entryType: "Income",
-      sourceName: "Pending Project Collections",
-      sector: "Automation",
-      category: "Pending Collections",
-      amount: totalPending,
-      paymentMode: "Auto",
-      remarks: "Auto-generated from project pending amounts",
-      syncSource: PROJECT_PENDING_SYNC_SOURCE
     }
   ] as SheetRow[];
 }

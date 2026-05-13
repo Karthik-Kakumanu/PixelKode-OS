@@ -9,7 +9,11 @@ import { Button } from "@/components/ui/button";
 import { getRouteMeta, primaryRoutes } from "@/lib/navigation";
 import { useBusinessStore } from "@/lib/store";
 
-const quickActions = ["New lead", "New project", "New invoice"];
+const quickActions: ReadonlyArray<{ label: string; href: string; prompt?: string }> = [
+  { label: "New lead", href: "/leads" },
+  { label: "New project", href: "/projects" },
+  { label: "New invoice", href: "/revenue", prompt: "Add revenue entry" }
+];
 
 export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
   const router = useRouter();
@@ -159,12 +163,19 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
           <div className="hidden items-center gap-2 xl:flex">
             {quickActions.map((action) => (
               <button
-                key={action}
+                key={action.label}
                 type="button"
-                onClick={() => openAssistant(action === "New invoice" ? "Add revenue entry" : action, false)}
+                onClick={() => {
+                  router.push(action.href);
+                  setPageMenuOpen(false);
+                  setNotificationsOpen(false);
+                  if (action.prompt) {
+                    openAssistant(action.prompt, false);
+                  }
+                }}
                 className="rounded-2xl border border-white/60 bg-white/60 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur-md transition hover:bg-white/80 dark:border-white/10 dark:bg-white/5 dark:text-zinc-200 dark:hover:bg-white/10"
               >
-                {action}
+                {action.label}
               </button>
             ))}
           </div>

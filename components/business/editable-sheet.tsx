@@ -130,7 +130,7 @@ function toDayString(value: unknown) {
 
 function getTimetableReferenceDate(now: Date) {
   const reference = new Date(now);
-  if (now.getHours() > 22 || (now.getHours() === 22 && now.getMinutes() >= 0)) {
+  if (now.getHours() > 23 || (now.getHours() === 23 && now.getMinutes() >= 0)) {
     reference.setDate(reference.getDate() + 1);
   }
   reference.setHours(0, 0, 0, 0);
