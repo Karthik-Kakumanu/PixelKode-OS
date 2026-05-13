@@ -43,6 +43,7 @@ import {
   buildServiceDemandData,
   buildTeamCapacityData
 } from "@/lib/analytics";
+import { formatLocalDateKey } from "@/lib/date";
 import { readMeetHistory, type MeetSessionRecord } from "@/lib/meet-session-store";
 import { useBusinessStore } from "@/lib/store";
 import { cn, formatCurrency } from "@/lib/utils";
@@ -275,6 +276,17 @@ function ChartMeta({ children }: { children: React.ReactNode }) {
   return <p className="mt-3 text-xs text-slate-500 dark:text-zinc-400">{children}</p>;
 }
 
+function formatAiHeadlineBullets(message: string) {
+  return message
+    .replace(/\r/g, "")
+    .split(/\n+/)
+    .map((line) => line.replace(/^#+\s*/g, "").replace(/\*\*/g, "").trim())
+    .flatMap((line) => line.split(/\s(?=\d+\.\s)/))
+    .map((line) => line.replace(/^\d+\.\s*/, "").replace(/^[-*]\s*/, "").trim())
+    .filter(Boolean)
+    .slice(0, 6);
+}
+
 function VisibilityGate({
   children,
   minHeight = 320
@@ -477,7 +489,7 @@ export function DashboardView() {
   const currentWeekContent = contentRows.filter((row) => isInRange(String(row.publishDate ?? ""), currentWeekStart, nextDay)).length;
   const previousWeekContent = contentRows.filter((row) => isInRange(String(row.publishDate ?? ""), previousWeekStart, currentWeekStart)).length;
   const todayKey = assistantWeekdays[now.getDay() === 0 ? 6 : now.getDay() - 1] ?? "monday";
-  const todayDateKey = now.toISOString().slice(0, 10);
+  const todayDateKey = formatLocalDateKey(now);
   const todayTimetableEntries = (sheets.timetable?.rows ?? [])
     .map((row) => ({
       slot: String(row.slotLabel ?? "Slot"),
@@ -1341,7 +1353,7 @@ export function DashboardView() {
                       },
                       body: JSON.stringify({
                         prompt:
-                          "Refresh the executive analysis for the full business workspace. Summarize momentum, risks, bottlenecks, automation gaps, and the highest-leverage next moves.",
+                          "Refresh the executive analysis for the full business workspace. Return only 4 to 6 short headline bullet points. No intro, no markdown headings, no long paragraphs. Cover momentum, risks, bottlenecks, automation gaps, and highest-leverage next moves.",
                         pathname: "/dashboard",
                         meetHistory: readMeetHistory()
                       })
@@ -1373,11 +1385,23 @@ export function DashboardView() {
                   </div>
                   <div className="min-w-0">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-zinc-500">AI Narrative</p>
-                    <p className="mt-3 max-w-4xl text-sm leading-8 text-slate-600 dark:text-zinc-300">
-                      {isAiLoading
-                        ? "Analyzing the latest business data across projects, leads, revenue, content, team, shopping, timetable, meetings, and infrastructure..."
-                        : aiInsight || "AI analysis is now manual for better speed. Click Refresh AI only when you want a fresh executive readout."}
-                    </p>
+                    {isAiLoading ? (
+                      <p className="mt-3 max-w-4xl text-sm leading-8 text-slate-600 dark:text-zinc-300">
+                        Analyzing the latest business data across projects, leads, revenue, content, team, shopping, timetable, meetings, and infrastructure...
+                      </p>
+                    ) : aiInsight ? (
+                      <ul className="mt-3 space-y-2 text-sm text-slate-600 dark:text-zinc-300">
+                        {formatAiHeadlineBullets(aiInsight).map((item, index) => (
+                          <li key={`ai-headline-${index}`} className="rounded-[18px] border border-slate-200/80 bg-white/70 px-3 py-2 dark:border-white/10 dark:bg-white/[0.03]">
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-3 max-w-4xl text-sm leading-8 text-slate-600 dark:text-zinc-300">
+                        AI analysis is now manual for better speed. Click Refresh AI only when you want a fresh executive readout.
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1837,7 +1861,7 @@ export function DashboardView() {
                     },
                     body: JSON.stringify({
                       prompt:
-                        "Refresh the weekly CEO report from the entire workspace. Cover wins, blockers, financial movement, delivery risk, pipeline quality, team load, and the top 3 next moves.",
+                        "Refresh the weekly CEO report from the entire workspace. Return only 4 to 6 short headline bullet points. No intro, no markdown headings, no detailed paragraphs. Cover wins, blockers, financial movement, delivery risk, pipeline quality, team load, and top next moves.",
                       pathname: "/dashboard",
                       meetHistory: readMeetHistory()
                     })
@@ -1863,11 +1887,23 @@ export function DashboardView() {
         >
         <div className="grid gap-4 xl:grid-cols-[1.25fr_0.9fr]">
           <div className="rounded-[28px] border border-slate-200/80 bg-slate-50/70 p-5 dark:border-white/10 dark:bg-white/[0.03]">
-            <p className="text-sm leading-8 text-slate-600 dark:text-zinc-300">
-              {isCeoLoading
-                ? "Preparing the weekly CEO report from projects, leads, revenue, team, content, shopping, timetable, meetings, and infrastructure..."
-                : ceoReport || "Weekly CEO report is now generated on demand for better performance. Click Refresh Report when you need it."}
-            </p>
+            {isCeoLoading ? (
+              <p className="text-sm leading-8 text-slate-600 dark:text-zinc-300">
+                Preparing the weekly CEO report from projects, leads, revenue, team, content, shopping, timetable, meetings, and infrastructure...
+              </p>
+            ) : ceoReport ? (
+              <ul className="space-y-2 text-sm text-slate-600 dark:text-zinc-300">
+                {formatAiHeadlineBullets(ceoReport).map((item, index) => (
+                  <li key={`ceo-headline-${index}`} className="rounded-[18px] border border-slate-200/80 bg-white/70 px-3 py-2 dark:border-white/10 dark:bg-white/[0.03]">
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm leading-8 text-slate-600 dark:text-zinc-300">
+                Weekly CEO report is now generated on demand for better performance. Click Refresh Report when you need it.
+              </p>
+            )}
           </div>
           <div className="grid gap-3">
             {[

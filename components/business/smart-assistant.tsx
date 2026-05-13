@@ -1778,16 +1778,16 @@ export function SmartAssistant() {
             onClick={() => setOpen(false)}
             className="pointer-events-auto absolute inset-0 bg-[linear-gradient(90deg,rgba(15,23,42,0.02),rgba(15,23,42,0.16))] backdrop-blur-[2px]"
           />
-          <Card className="pointer-events-auto relative mr-2 mt-2 flex h-[calc(100vh-1rem)] w-[min(96vw,760px)] max-w-[760px] flex-col overflow-hidden rounded-[32px] border-white/70 bg-white/96 p-0 shadow-[0_40px_120px_rgba(15,23,42,0.24)] backdrop-blur-2xl sm:mr-4 sm:mt-4 sm:h-[calc(100vh-2rem)] sm:rounded-[36px]">
-          <div className="border-b border-white/80 bg-[radial-gradient(circle_at_top_left,_rgba(251,191,36,0.18),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(56,189,248,0.16),_transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96))] px-4 py-4 sm:px-5 sm:py-5">
+          <Card className="pointer-events-auto relative mr-2 mt-2 flex h-[calc(100vh-1rem)] w-[min(96vw,760px)] max-w-[760px] flex-col overflow-hidden rounded-[32px] border border-slate-200/80 bg-white/96 p-0 shadow-[0_40px_120px_rgba(15,23,42,0.24)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-950/96 sm:mr-4 sm:mt-4 sm:h-[calc(100vh-2rem)] sm:rounded-[36px]">
+          <div className="border-b border-slate-200/80 bg-[radial-gradient(circle_at_top_left,_rgba(251,191,36,0.18),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(56,189,248,0.16),_transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96))] px-4 py-4 dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_left,_rgba(251,191,36,0.14),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(56,189,248,0.12),_transparent_28%),linear-gradient(180deg,rgba(9,9,11,0.98),rgba(24,24,27,0.96))] sm:px-5 sm:py-5">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 via-orange-400 to-sky-500 text-white shadow-lg">
                   <Bot className="h-5 w-5" />
                 </div>
                 <div>
-                  <p className="text-base font-semibold text-slate-900">Pixelkode Voice Assistant</p>
-                  <p className="text-xs text-slate-600">Ask questions naturally, use voice, and get direct answers in chat</p>
+                  <p className="text-base font-semibold text-slate-900 dark:text-white">Pixelkode Voice Assistant</p>
+                  <p className="text-xs text-slate-600 dark:text-zinc-400">Ask questions naturally, use voice, and get direct answers in chat</p>
                 </div>
               </div>
               <Button variant="ghost" size="icon" onClick={() => setOpen(false)} aria-label="Close assistant">
@@ -1801,7 +1801,7 @@ export function SmartAssistant() {
                 onClick={() => setVoiceRepliesEnabled((value) => !value)}
                 className={cn(
                   "rounded-full border px-3 py-2 text-xs font-semibold transition",
-                  voiceRepliesEnabled ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-white text-slate-600"
+                  voiceRepliesEnabled ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300" : "border-slate-200 bg-white text-slate-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300"
                 )}
               >
                 {voiceRepliesEnabled ? <Volume2 className="mr-2 inline h-3.5 w-3.5" /> : <VolumeX className="mr-2 inline h-3.5 w-3.5" />}
@@ -1813,32 +1813,32 @@ export function SmartAssistant() {
                 onClick={isListening ? stopListening : startListening}
                 className={cn(
                   "rounded-full border px-3 py-2 text-xs font-semibold transition",
-                  isListening ? "border-rose-200 bg-rose-50 text-rose-700" : "border-sky-200 bg-sky-50 text-sky-700"
+                  isListening ? "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300" : "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300"
                 )}
               >
                 {isListening ? <MicOff className="mr-2 inline h-3.5 w-3.5" /> : <Mic className="mr-2 inline h-3.5 w-3.5" />}
                 {isListening ? "Stop listening" : "Start listening"}
               </button>
 
-              <span className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600">
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300">
                 Active target: {currentSheetKey}
               </span>
               <span
                 className={cn(
                   "rounded-full border px-3 py-2 text-xs font-semibold",
                   aiStatus?.configured
-                    ? "border-violet-200 bg-violet-50 text-violet-700"
-                    : "border-slate-200 bg-white text-slate-500"
+                    ? "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300"
+                    : "border-slate-200 bg-white text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400"
                 )}
               >
-                {aiStatus?.configured ? `${aiStatus.provider} connected${aiStatus.model ? ` · ${aiStatus.model}` : ""}` : "AI not connected"}
+	                {aiStatus?.configured ? `${aiStatus.provider} connected${aiStatus.model ? ` | ${aiStatus.model}` : ""}` : "AI not connected"}
               </span>
             </div>
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col gap-4 p-3 sm:p-5">
-            <div className="flex min-h-0 flex-1 flex-col rounded-[28px] border border-slate-200 bg-white p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] sm:p-4">
-              <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+	            <div className="flex min-h-0 flex-1 flex-col rounded-[28px] border border-slate-200 bg-white p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] dark:border-white/10 dark:bg-white/[0.03] dark:shadow-none sm:p-4">
+	              <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-zinc-500">
                 <Sparkles className="h-3.5 w-3.5" />
                 Conversation
               </div>
@@ -1861,7 +1861,7 @@ export function SmartAssistant() {
                           "min-w-0 max-w-[calc(100%-2.75rem)] flex-1 break-words rounded-[22px] px-4 py-3 text-sm leading-7 whitespace-pre-wrap shadow-sm sm:rounded-[24px]",
                           message.role === "user"
                             ? "bg-slate-900 text-white shadow-[0_12px_30px_rgba(15,23,42,0.18)]"
-                            : "border border-slate-200 bg-white text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.06)]"
+	                            : "border border-slate-200 bg-white text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-200 dark:shadow-none"
                         )}
                       >
                         {message.content}
@@ -1872,7 +1872,7 @@ export function SmartAssistant() {
 
                 {isListening || liveTranscript ? (
                   <div className="flex justify-end">
-                    <div className="w-full max-w-[calc(100%-1rem)] rounded-[22px] border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-800 shadow-sm sm:max-w-[calc(100%-3rem)] sm:rounded-[24px]">
+	                    <div className="w-full max-w-[calc(100%-1rem)] rounded-[22px] border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-800 shadow-sm dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-200 sm:max-w-[calc(100%-3rem)] sm:rounded-[24px]">
                       <div className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em]">
                         <WandSparkles className="h-3.5 w-3.5" />
                         Live transcript
@@ -1886,14 +1886,14 @@ export function SmartAssistant() {
             </div>
 
             {previewColumns.length > 0 ? (
-              <div className="rounded-[26px] border border-emerald-100 bg-emerald-50/75 p-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-emerald-900">
+	              <div className="rounded-[26px] border border-emerald-100 bg-emerald-50/75 p-4 dark:border-emerald-500/20 dark:bg-emerald-500/10">
+	                <div className="flex items-center gap-2 text-sm font-medium text-emerald-900 dark:text-emerald-200">
                   <CheckCircle2 className="h-4 w-4" />
                   Draft context for {currentSheetKey}
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {previewColumns.map((column) => (
-                    <span key={column.id} className="rounded-full border border-white/80 bg-white px-3 py-1.5 text-xs font-medium text-slate-700">
+	                    <span key={column.id} className="rounded-full border border-white/80 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-200">
                       {column.label}: {String(draft[column.id])}
                     </span>
                   ))}
@@ -1901,13 +1901,13 @@ export function SmartAssistant() {
               </div>
             ) : null}
 
-            <div className="flex gap-2 rounded-[22px] border border-violet-100 bg-white p-2 shadow-[0_12px_30px_rgba(15,23,42,0.06)] sm:gap-3 sm:rounded-[24px]">
+	            <div className="flex gap-2 rounded-[22px] border border-violet-100 bg-white p-2 shadow-[0_12px_30px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-white/[0.03] dark:shadow-none sm:gap-3 sm:rounded-[24px]">
               <Input
                 ref={inputRef}
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
                 placeholder="Ask anything about your current data..."
-                className="h-12 border-slate-200 bg-slate-50/70 text-slate-800 placeholder:text-slate-400 focus-visible:ring-fuchsia-200"
+	                className="h-12 border-slate-200 bg-slate-50/70 text-slate-800 placeholder:text-slate-400 focus-visible:ring-fuchsia-200 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus-visible:ring-cyan-500/40"
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault();

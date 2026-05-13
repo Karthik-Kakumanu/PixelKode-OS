@@ -182,16 +182,16 @@ export function MeetSession() {
 
   return (
     <div className="space-y-6" suppressHydrationWarning>
-      <Card className="overflow-hidden p-0">
-        <div className="border-b border-white/70 bg-white/80 px-5 py-4">
+      <Card className="overflow-hidden border border-slate-200/80 bg-white/90 p-0 dark:border-white/10 dark:bg-slate-950/72">
+        <div className="border-b border-slate-200/80 bg-white/80 px-5 py-4 dark:border-white/10 dark:bg-white/[0.03]">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h1 className="premium-heading text-2xl font-semibold">Meet Session</h1>
-              <p className="mt-1 text-sm text-slate-600">
+              <p className="mt-1 text-sm text-slate-600 dark:text-zinc-400">
                 Create instant or scheduled Google Meet sessions and keep the shareable link inside the workspace. App credentials configure the integration, and Google account authorization unlocks meeting creation.
               </p>
             </div>
-            <div className="rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-sm font-medium text-slate-600 shadow-sm">
+            <div className="rounded-2xl border border-slate-200/80 bg-white/80 px-3 py-2 text-sm font-medium text-slate-600 shadow-sm dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300">
               {isLoadingStatus
                 ? "Checking Google status..."
                 : status.connected
@@ -204,11 +204,11 @@ export function MeetSession() {
         </div>
 
         <div className="space-y-4 p-5" suppressHydrationWarning>
-          {error ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : null}
-          {success ? <p className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</p> : null}
+          {error ? <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">{error}</p> : null}
+          {success ? <p className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">{success}</p> : null}
 
           <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]" suppressHydrationWarning>
-            <div className="rounded-[26px] border border-white/80 bg-white/90 p-4 shadow-sm space-y-4" suppressHydrationWarning>
+            <div className="space-y-4 rounded-[26px] border border-slate-200/80 bg-white/90 p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.03]" suppressHydrationWarning>
               <div className="flex flex-wrap items-center gap-2" suppressHydrationWarning>
                 <Button
                   type="button"
@@ -217,8 +217,8 @@ export function MeetSession() {
                   onClick={() => setMode("instant")}
                   className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
                     mode === "instant"
-                      ? "border-slate-800 bg-slate-800 text-white"
-                      : "border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      ? "border-slate-800 bg-slate-800 text-white dark:border-white dark:bg-white dark:text-slate-950"
+                      : "border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-200 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:bg-white/[0.08]"
                   }`}
                 >
                   Instant Meet
@@ -230,8 +230,8 @@ export function MeetSession() {
                   onClick={() => setMode("scheduled")}
                   className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
                     mode === "scheduled"
-                      ? "border-slate-800 bg-slate-800 text-white"
-                      : "border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      ? "border-slate-800 bg-slate-800 text-white dark:border-white dark:bg-white dark:text-slate-950"
+                      : "border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-200 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:bg-white/[0.08]"
                   }`}
                 >
                   Scheduled Meet
@@ -242,14 +242,14 @@ export function MeetSession() {
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
                 placeholder="Meeting title"
-                className="h-11 rounded-2xl border border-white/80 bg-white/90 px-4 text-sm text-slate-800"
+                className="h-11 rounded-2xl border border-slate-200 bg-white/90 px-4 text-sm text-slate-800 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100"
               />
 
               <Input
                 value={attendeeEmail}
                 onChange={(event) => setAttendeeEmail(event.target.value)}
                 placeholder="Attendee email"
-                className="h-11 rounded-2xl border border-white/80 bg-white/90 px-4 text-sm text-slate-800"
+                className="h-11 rounded-2xl border border-slate-200 bg-white/90 px-4 text-sm text-slate-800 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100"
               />
 
               <div className="grid gap-3 md:grid-cols-3">
@@ -258,7 +258,7 @@ export function MeetSession() {
                   onChange={(event) => setDurationMinutes(event.target.value)}
                   type="number"
                   placeholder="Duration"
-                  className="h-11 rounded-2xl border border-white/80 bg-white/90 px-4 text-sm text-slate-800"
+                  className="h-11 rounded-2xl border border-slate-200 bg-white/90 px-4 text-sm text-slate-800 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100"
                 />
                 {mode === "scheduled" ? (
                   <>
@@ -266,17 +266,17 @@ export function MeetSession() {
                       value={scheduledDate}
                       onChange={(event) => setScheduledDate(event.target.value)}
                       type="date"
-                      className="h-11 rounded-2xl border border-white/80 bg-white/90 px-4 text-sm text-slate-800"
+                      className="h-11 rounded-2xl border border-slate-200 bg-white/90 px-4 text-sm text-slate-800 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100"
                     />
                     <Input
                       value={scheduledTime}
                       onChange={(event) => setScheduledTime(event.target.value)}
                       type="time"
-                      className="h-11 rounded-2xl border border-white/80 bg-white/90 px-4 text-sm text-slate-800"
+                      className="h-11 rounded-2xl border border-slate-200 bg-white/90 px-4 text-sm text-slate-800 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100"
                     />
                   </>
                 ) : (
-                  <div className="md:col-span-2 flex items-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 text-sm text-slate-500">
+                  <div className="md:col-span-2 flex items-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 text-sm text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400">
                     Starts immediately using your current time zone: {timezone}
                   </div>
                 )}
@@ -301,24 +301,24 @@ export function MeetSession() {
                     Add credentials in .env.local first
                   </Button>
                 )}
-                <div className="rounded-2xl border border-white/80 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300">
                   Invite mail is optional. If you add it, Google Calendar sends the meeting invite there. Use `.env.local` for real credentials; `.env.example` is only a template.
                 </div>
               </div>
             </div>
 
-            <div className="rounded-[26px] border border-white/80 bg-white/90 p-4 shadow-sm" suppressHydrationWarning>
-              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900" suppressHydrationWarning>
+            <div className="rounded-[26px] border border-slate-200/80 bg-white/90 p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.03]" suppressHydrationWarning>
+              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white" suppressHydrationWarning>
                 <CalendarClock className="h-4 w-4 text-fuchsia-600" />
                 Latest Meet Link
               </div>
 
               {activeRecord ? (
                 <div className="space-y-3">
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    <p className="text-sm font-semibold text-slate-900">{activeRecord.title}</p>
-                    <p className="mt-1 text-xs text-slate-500">{formatLocalDateTime(activeRecord.scheduledAt)}</p>
-                    <p className="mt-3 break-all rounded-xl bg-white px-3 py-3 text-sm text-slate-700 shadow-sm">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{activeRecord.title}</p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">{formatLocalDateTime(activeRecord.scheduledAt)}</p>
+                    <p className="mt-3 break-all rounded-xl bg-white px-3 py-3 text-sm text-slate-700 shadow-sm dark:bg-zinc-900 dark:text-zinc-200">
                       {activeRecord.meetLink}
                     </p>
                   </div>
@@ -347,15 +347,15 @@ export function MeetSession() {
                   </div>
                 </div>
               ) : (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500">
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400">
                   Your generated Meet link will appear here after creation.
                 </div>
               )}
             </div>
           </div>
 
-          <div className="rounded-[26px] border border-white/80 bg-white/90 p-4 shadow-sm" suppressHydrationWarning>
-            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900" suppressHydrationWarning>
+          <div className="rounded-[26px] border border-slate-200/80 bg-white/90 p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.03]" suppressHydrationWarning>
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white" suppressHydrationWarning>
               <Video className="h-4 w-4 text-sky-600" />
               Recent Sessions
             </div>
@@ -363,12 +363,12 @@ export function MeetSession() {
             <div className="space-y-3">
               {history.length > 0 ? (
                 history.map((record) => (
-                  <div key={record.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div key={record.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <p className="text-sm font-semibold text-slate-900">{record.title}</p>
-                        <p className="mt-1 text-xs text-slate-500">{formatLocalDateTime(record.scheduledAt)}</p>
-                        <p className="mt-2 text-xs text-slate-500">
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">{record.title}</p>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">{formatLocalDateTime(record.scheduledAt)}</p>
+                        <p className="mt-2 text-xs text-slate-500 dark:text-zinc-400">
                           Host: {record.hostEmail ?? "Connected account"}{record.attendeeEmail ? ` | Invite: ${record.attendeeEmail}` : ""}
                         </p>
                       </div>
@@ -389,13 +389,13 @@ export function MeetSession() {
                         </Button>
                       </div>
                     </div>
-                    <p className="mt-3 break-all rounded-xl bg-white px-3 py-3 text-sm text-slate-700 shadow-sm">
+                    <p className="mt-3 break-all rounded-xl bg-white px-3 py-3 text-sm text-slate-700 shadow-sm dark:bg-zinc-900 dark:text-zinc-200">
                       {record.meetLink}
                     </p>
                   </div>
                 ))
               ) : (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500">
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400">
                   No meetings created yet.
                 </div>
               )}
