@@ -25,7 +25,7 @@ const InputBase = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<H
       {...props}
       onWheel={handleWheel}
       className={cn(
-        "flex h-11 w-full rounded-2xl border border-violet-200 bg-white/60 px-4 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-200",
+        "flex h-11 w-full rounded-2xl border border-violet-200 bg-white/60 px-4 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-200 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus-visible:ring-cyan-500/50",
         className
       )}
     />
@@ -52,7 +52,7 @@ const PasswordInput = function PasswordInput({ className, ...props }: React.Inpu
           props.onWheel?.(event);
         }}
         className={cn(
-          "flex h-11 w-full rounded-2xl border border-violet-200 bg-white/60 px-4 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-200 pr-12",
+          "flex h-11 w-full rounded-2xl border border-violet-200 bg-white/60 px-4 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-200 pr-12 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus-visible:ring-cyan-500/50",
           className
         )}
       />
@@ -60,7 +60,7 @@ const PasswordInput = function PasswordInput({ className, ...props }: React.Inpu
         <button
           type="button"
           tabIndex={-1}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:text-zinc-500 dark:hover:text-zinc-200"
           onClick={() => setShow((v) => !v)}
           aria-label={show ? "Hide password" : "Show password"}
         >

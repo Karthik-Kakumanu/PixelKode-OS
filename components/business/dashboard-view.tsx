@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -23,6 +23,8 @@ import {
   BriefcaseBusiness,
   CalendarClock,
   CheckCircle2,
+  ClipboardList,
+  Command,
   CircleDollarSign,
   Minus,
   RefreshCw,
@@ -82,11 +84,11 @@ function isAutoRevenueSummaryRow(row: Record<string, unknown>) {
 }
 
 const tooltipStyle = {
-  border: "1px solid rgba(148,163,184,0.18)",
+  border: "1px solid rgba(51,65,85,0.92)",
   borderRadius: 18,
-  background: "rgba(255,255,255,0.97)",
-  color: "#0f172a",
-  boxShadow: "0 20px 60px rgba(15,23,42,0.12)"
+  background: "rgba(15,23,42,0.96)",
+  color: "#f8fafc",
+  boxShadow: "0 20px 60px rgba(15,23,42,0.3)"
 };
 
 function formatNumber(value: number) {
@@ -269,11 +271,62 @@ function InsightPill({ children }: { children: React.ReactNode }) {
   );
 }
 
+function ChartMeta({ children }: { children: React.ReactNode }) {
+  return <p className="mt-3 text-xs text-slate-500 dark:text-zinc-400">{children}</p>;
+}
+
+function VisibilityGate({
+  children,
+  minHeight = 320
+}: {
+  children: React.ReactNode;
+  minHeight?: number;
+}) {
+  const [isVisible, setIsVisible] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element || isVisible) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "220px 0px" }
+    );
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [isVisible]);
+
+  return (
+    <div ref={containerRef}>
+      {isVisible ? (
+        children
+      ) : (
+        <div
+          className="flex items-center justify-center rounded-[28px] border border-dashed border-slate-200 bg-slate-50/70 text-sm text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400"
+          style={{ minHeight }}
+        >
+          Loading section when visible...
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function DashboardView() {
   const sheets = useBusinessStore((state) => state.sheets);
   const alerts = useBusinessStore((state) => state.alerts);
   const isLoaded = useBusinessStore((state) => state.isLoaded);
   const error = useBusinessStore((state) => state.error);
+  const addRowWithValues = useBusinessStore((state) => state.addRowWithValues);
+  const deleteRow = useBusinessStore((state) => state.deleteRow);
+  const updateCell = useBusinessStore((state) => state.updateCell);
   const [activeTab, setActiveTab] = useState<DashboardTab>("revenue");
   const [meetHistory, setMeetHistory] = useState<MeetSessionRecord[]>([]);
   const [aiInsight, setAiInsight] = useState("");
@@ -282,65 +335,13 @@ export function DashboardView() {
   const [ceoReport, setCeoReport] = useState("");
   const [ceoError, setCeoError] = useState("");
   const [isCeoLoading, setIsCeoLoading] = useState(false);
+  const [commandInput, setCommandInput] = useState("");
+  const [commandFeedback, setCommandFeedback] = useState<{ tone: "success" | "info"; message: string } | null>(null);
+  const lastUndoRef = useRef<null | { label: string; undo: () => void }>(null);
 
   useEffect(() => {
     setMeetHistory(readMeetHistory());
   }, []);
-
-  useEffect(() => {
-    if (!isLoaded) return;
-
-    const requestDashboardAI = async (prompt: string) => {
-      const response = await fetch("/api/ai/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          prompt,
-          pathname: "/dashboard",
-          meetHistory
-        })
-      });
-
-      const payload = (await response.json()) as { error?: string; message?: string };
-      if (!response.ok || !payload.message) {
-        throw new Error(payload.error ?? "AI analysis is unavailable right now.");
-      }
-
-      return payload.message;
-    };
-
-    const loadExecutiveInsight = async () => {
-      setIsAiLoading(true);
-      setAiError("");
-      setIsCeoLoading(true);
-      setCeoError("");
-
-      try {
-        const [executive, weekly] = await Promise.all([
-          requestDashboardAI(
-            "Give me a boardroom-quality executive analysis of the full workspace. Cover projects, collections, revenue, pending amounts, leads, services, content, team, shopping, timetable, meetings, servers, and databases. Focus on what matters most right now."
-          ),
-          requestDashboardAI(
-            "Write a weekly CEO report from the full workspace. Cover wins, risks, growth signals, delivery risks, collections, pipeline health, team capacity, and top next moves."
-          )
-        ]);
-
-        setAiInsight(executive);
-        setCeoReport(weekly);
-      } catch (nextError) {
-        const message = nextError instanceof Error ? nextError.message : "AI analysis is unavailable right now.";
-        setAiError(message);
-        setCeoError(message);
-      } finally {
-        setIsAiLoading(false);
-        setIsCeoLoading(false);
-      }
-    };
-
-    void loadExecutiveInsight();
-  }, [isLoaded, meetHistory]);
 
   const projects = sheets.projects?.rows ?? [];
   const leads = sheets.leads?.rows ?? [];
@@ -475,6 +476,288 @@ export function DashboardView() {
 
   const currentWeekContent = contentRows.filter((row) => isInRange(String(row.publishDate ?? ""), currentWeekStart, nextDay)).length;
   const previousWeekContent = contentRows.filter((row) => isInRange(String(row.publishDate ?? ""), previousWeekStart, currentWeekStart)).length;
+  const todayKey = assistantWeekdays[now.getDay() === 0 ? 6 : now.getDay() - 1] ?? "monday";
+  const todayDateKey = now.toISOString().slice(0, 10);
+  const todayTimetableEntries = (sheets.timetable?.rows ?? [])
+    .map((row) => ({
+      slot: String(row.slotLabel ?? "Slot"),
+      value: String(row[todayKey] ?? "").trim()
+    }))
+    .filter((row) => row.value !== "");
+  const dueProjectItems = projects
+    .filter((project) => {
+      const deliveryDate = String(project.deliveryDate ?? "");
+      const status = String(project.projectStatus ?? "");
+      return deliveryDate !== "" && deliveryDate <= todayDateKey && status !== "Completed";
+    })
+    .slice(0, 4);
+  const receivedMoneyToday = revenueRows
+    .filter((row) => String(row.entryType ?? "") === "Income" && !isAutoRevenueSummaryRow(row) && String(row.entryDate ?? "") === todayDateKey)
+    .reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
+
+  const normalizeCommandText = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const createCommandRowId = (prefix: string) => `${prefix}-command-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const findProjectIndex = (query: string) =>
+    projects.findIndex((project) => {
+      const normalizedQuery = normalizeCommandText(query);
+      const projectName = normalizeCommandText(String(project.projectName ?? ""));
+      const clientName = normalizeCommandText(String(project.clientName ?? ""));
+      return projectName.includes(normalizedQuery) || clientName.includes(normalizedQuery) || normalizedQuery.includes(projectName);
+    });
+  const findLeadIndex = (query: string) =>
+    leads.findIndex((lead) => {
+      const normalizedQuery = normalizeCommandText(query);
+      const businessName = normalizeCommandText(String(lead.businessName ?? ""));
+      const contactName = normalizeCommandText(String(lead.contactName ?? ""));
+      return businessName.includes(normalizedQuery) || contactName.includes(normalizedQuery) || normalizedQuery.includes(businessName);
+    });
+  const resolveCommandDate = (rawValue: string) => {
+    const normalized = normalizeCommandText(rawValue);
+    if (normalized === "today") return todayDateKey;
+    if (normalized === "tomorrow") {
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      return tomorrow.toISOString().slice(0, 10);
+    }
+    const explicitDate = rawValue.trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(explicitDate) ? explicitDate : "";
+  };
+
+  const runCommand = (command: string) => {
+    const trimmed = command.trim();
+    if (!trimmed) return;
+
+    const receivedMatch = trimmed.match(/^received\s+([\d,]+(?:\.\d+)?)\s+from\s+(.+)$/i);
+    if (receivedMatch) {
+      const amount = Number(receivedMatch[1].replace(/,/g, ""));
+      const projectIndex = findProjectIndex(receivedMatch[2]);
+
+      if (projectIndex >= 0 && Number.isFinite(amount) && amount > 0) {
+        const project = projects[projectIndex];
+        const previousAmountReceived = Number(project.amountReceived ?? 0);
+        const nextAmountReceived = Number(project.amountReceived ?? 0) + amount;
+        const revenueRowId = createCommandRowId("revenue");
+        updateCell("projects", projectIndex, "amountReceived", nextAmountReceived);
+        addRowWithValues(
+          "revenue",
+          {
+            id: revenueRowId,
+            entryDate: todayDateKey,
+            entryType: "Income",
+            sourceName: String(project.projectName ?? receivedMatch[2]).trim(),
+            sector: String(project.sector ?? ""),
+            category: "Project Receipt",
+            amount,
+            paymentMode: "Command Bar",
+            remarks: "Added from dashboard command bar"
+          },
+          true
+        );
+        lastUndoRef.current = {
+          label: "Undo income entry",
+          undo: () => {
+            updateCell("projects", projectIndex, "amountReceived", previousAmountReceived);
+            const revenueIndex = useBusinessStore.getState().sheets.revenue.rows.findIndex((row) => String(row.id ?? "") === revenueRowId);
+            if (revenueIndex >= 0) {
+              useBusinessStore.getState().deleteRow("revenue", revenueIndex);
+            }
+          }
+        };
+        setCommandFeedback({
+          tone: "success",
+          message: `Added ${formatCurrency(amount)} as income and updated ${String(project.projectName ?? "project")} collections.`
+        });
+        setCommandInput("");
+        return;
+      }
+    }
+
+    const expenseMatch = trimmed.match(/^add\s+expense\s+([\d,]+(?:\.\d+)?)\s+for\s+(.+)$/i);
+    if (expenseMatch) {
+      const amount = Number(expenseMatch[1].replace(/,/g, ""));
+      const sourceName = expenseMatch[2].trim();
+      if (Number.isFinite(amount) && amount > 0 && sourceName) {
+        const revenueRowId = createCommandRowId("revenue");
+        addRowWithValues(
+          "revenue",
+          {
+            id: revenueRowId,
+            entryDate: todayDateKey,
+            entryType: "Expense",
+            sourceName,
+            sector: "Operations",
+            category: "Manual Expense",
+            amount,
+            paymentMode: "Command Bar",
+            remarks: "Added from dashboard command bar"
+          },
+          true
+        );
+        lastUndoRef.current = {
+          label: "Undo expense entry",
+          undo: () => {
+            const revenueIndex = useBusinessStore.getState().sheets.revenue.rows.findIndex((row) => String(row.id ?? "") === revenueRowId);
+            if (revenueIndex >= 0) {
+              useBusinessStore.getState().deleteRow("revenue", revenueIndex);
+            }
+          }
+        };
+        setCommandFeedback({
+          tone: "success",
+          message: `Logged ${formatCurrency(amount)} as an expense for ${sourceName}.`
+        });
+        setCommandInput("");
+        return;
+      }
+    }
+
+    const addLeadMatch = trimmed.match(/^add\s+lead\s+for\s+(.+)$/i);
+    if (addLeadMatch) {
+      const businessName = addLeadMatch[1].trim();
+      if (businessName) {
+        const leadRowId = createCommandRowId("lead");
+        addRowWithValues(
+          "leads",
+          {
+            id: leadRowId,
+            businessName,
+            contactName: "",
+            category: "",
+            servicePitch: "",
+            callStatus: "Not Called",
+            leadStatus: "Fresh",
+            expectedValue: 0,
+            callCount: 0,
+            notes: "Added from dashboard command bar"
+          },
+          true
+        );
+        lastUndoRef.current = {
+          label: "Undo lead creation",
+          undo: () => {
+            const leadIndex = useBusinessStore.getState().sheets.leads.rows.findIndex((row) => String(row.id ?? "") === leadRowId);
+            if (leadIndex >= 0) {
+              useBusinessStore.getState().deleteRow("leads", leadIndex);
+            }
+          }
+        };
+        setCommandFeedback({
+          tone: "success",
+          message: `Created a fresh lead for ${businessName}.`
+        });
+        setCommandInput("");
+        return;
+      }
+    }
+
+    const followUpMatch = trimmed.match(/^set\s+follow-?up\s+for\s+(.+?)\s+(today|tomorrow|\d{4}-\d{2}-\d{2})$/i);
+    if (followUpMatch) {
+      const leadIndex = findLeadIndex(followUpMatch[1]);
+      const followUpDate = resolveCommandDate(followUpMatch[2]);
+      if (leadIndex >= 0 && followUpDate) {
+        const previousDate = String(leads[leadIndex].followUpDate ?? "");
+        const previousStatus = String(leads[leadIndex].leadStatus ?? "");
+        updateCell("leads", leadIndex, "followUpDate", followUpDate);
+        updateCell("leads", leadIndex, "leadStatus", "Follow-up");
+        lastUndoRef.current = {
+          label: "Undo follow-up update",
+          undo: () => {
+            updateCell("leads", leadIndex, "followUpDate", previousDate);
+            updateCell("leads", leadIndex, "leadStatus", previousStatus);
+          }
+        };
+        setCommandFeedback({
+          tone: "success",
+          message: `Set follow-up for ${String(leads[leadIndex].businessName ?? leads[leadIndex].contactName ?? "lead")} on ${followUpDate}.`
+        });
+        setCommandInput("");
+        return;
+      }
+    }
+
+    const proposalLeadMatch = trimmed.match(/^mark\s+lead\s+(.+?)\s+as\s+proposal\s+sent$/i);
+    if (proposalLeadMatch) {
+      const leadIndex = findLeadIndex(proposalLeadMatch[1]);
+      if (leadIndex >= 0) {
+        const previousLeadStatus = String(leads[leadIndex].leadStatus ?? "");
+        const previousCallStatus = String(leads[leadIndex].callStatus ?? "");
+        updateCell("leads", leadIndex, "leadStatus", "Proposal Sent");
+        updateCell("leads", leadIndex, "callStatus", "Connected");
+        lastUndoRef.current = {
+          label: "Undo lead status change",
+          undo: () => {
+            updateCell("leads", leadIndex, "leadStatus", previousLeadStatus);
+            updateCell("leads", leadIndex, "callStatus", previousCallStatus);
+          }
+        };
+        setCommandFeedback({
+          tone: "success",
+          message: `${String(leads[leadIndex].businessName ?? leads[leadIndex].contactName ?? "Lead")} moved to Proposal Sent.`
+        });
+        setCommandInput("");
+        return;
+      }
+    }
+
+    const convertLeadMatch = trimmed.match(/^mark\s+lead\s+(.+?)\s+as\s+converted$/i);
+    if (convertLeadMatch) {
+      const leadIndex = findLeadIndex(convertLeadMatch[1]);
+      if (leadIndex >= 0) {
+        const previousLeadStatus = String(leads[leadIndex].leadStatus ?? "");
+        const previousCallStatus = String(leads[leadIndex].callStatus ?? "");
+        updateCell("leads", leadIndex, "leadStatus", "Converted");
+        updateCell("leads", leadIndex, "callStatus", "Connected");
+        lastUndoRef.current = {
+          label: "Undo conversion",
+          undo: () => {
+            updateCell("leads", leadIndex, "leadStatus", previousLeadStatus);
+            updateCell("leads", leadIndex, "callStatus", previousCallStatus);
+          }
+        };
+        setCommandFeedback({
+          tone: "success",
+          message: `${String(leads[leadIndex].businessName ?? leads[leadIndex].contactName ?? "Lead")} marked as converted and will move into projects.`
+        });
+        setCommandInput("");
+        return;
+      }
+    }
+
+    const completeMatch = trimmed.match(/^mark\s+project\s+(.+?)\s+as\s+completed$/i);
+    if (completeMatch) {
+      const projectIndex = findProjectIndex(completeMatch[1]);
+
+      if (projectIndex >= 0) {
+        const previousCompletion = Number(projects[projectIndex].completionPercent ?? 0);
+        const previousDeliveryDate = String(projects[projectIndex].deliveryDate ?? "");
+        updateCell("projects", projectIndex, "completionPercent", 100);
+        if (!String(projects[projectIndex].deliveryDate ?? "").trim()) {
+          updateCell("projects", projectIndex, "deliveryDate", todayDateKey);
+        }
+        lastUndoRef.current = {
+          label: "Undo project completion",
+          undo: () => {
+            updateCell("projects", projectIndex, "completionPercent", previousCompletion);
+            updateCell("projects", projectIndex, "deliveryDate", previousDeliveryDate);
+          }
+        };
+        setCommandFeedback({
+          tone: "success",
+          message: `${String(projects[projectIndex].projectName ?? "Project")} is now marked as completed.`
+        });
+        setCommandInput("");
+        return;
+      }
+    }
+
+    window.dispatchEvent(new CustomEvent("ops-assistant:prompt", { detail: { prompt: command, run: true } }));
+    lastUndoRef.current = null;
+    setCommandFeedback({
+      tone: "info",
+      message: "Sent to the assistant because this command needs AI handling."
+    });
+    setCommandInput("");
+  };
 
   const comparisonCards = [
     {
@@ -558,6 +841,31 @@ export function DashboardView() {
     const key = dayKeys[now.getDay()];
     return (sheets.timetable?.rows ?? []).filter((row) => String(row[key] ?? "").trim() !== "").length;
   }, [now, sheets.timetable?.rows]);
+  const businessHealth = useMemo(() => {
+    const cashFlowHealth = totalProjectValue > 0 ? Math.max(0, Math.min(100, Math.round((totalReceived / totalProjectValue) * 100))) : 100;
+    const deliveryHealth = projects.length > 0 ? Math.max(0, Math.min(100, Math.round(((completedProjects + activeProjects * 0.65) / projects.length) * 100))) : 100;
+    const salesPipelineHealth = leads.length > 0 ? Math.max(0, Math.min(100, Math.round(conversionRate * 0.7 + Math.min(proposalLeads, 5) * 6))) : proposalLeads > 0 ? 55 : 100;
+    const opsLoadHealth = Math.max(0, Math.min(100, 100 - Math.min(alerts.length * 8 + openShopping * 3 + Math.max(0, 3 - todaysTimetableLoad) * 6, 100)));
+    const totalScore = Math.round((cashFlowHealth + deliveryHealth + salesPipelineHealth + opsLoadHealth) / 4);
+
+    return {
+      totalScore,
+      signals: [
+        { label: "Cash flow", score: cashFlowHealth, helper: "Received vs signed value" },
+        { label: "Delivery", score: deliveryHealth, helper: "Completion and progress across projects" },
+        { label: "Sales pipeline", score: salesPipelineHealth, helper: "Lead conversion plus proposal momentum" },
+        { label: "Ops load", score: opsLoadHealth, helper: "Alerts, shopping backlog, and timetable pressure" }
+      ]
+    };
+  }, [activeProjects, alerts.length, completedProjects, conversionRate, leads.length, openShopping, projects.length, proposalLeads, todaysTimetableLoad, totalProjectValue, totalReceived]);
+
+  const todayMetrics = [
+    { label: "Follow-ups today", value: `${todaysFollowUps.length}`, helper: "Leads that need outreach before the day closes" },
+    { label: "Due project items", value: `${dueProjectItems.length}`, helper: "Projects at or past delivery date and not completed" },
+    { label: "Received today", value: formatCurrency(receivedMoneyToday), helper: "Manual income entries logged for today" },
+    { label: "Pending collections", value: formatCurrency(totalPending), helper: `${projects.filter((project) => Number(project.pendingAmount ?? 0) > 0).length} projects still pending` },
+    { label: "Today's timetable", value: `${todayTimetableEntries.length}`, helper: todayTimetableEntries.length > 0 ? todayTimetableEntries.slice(0, 2).map((item) => `${item.slot}: ${item.value}`).join(" | ") : "No work blocks planned yet" }
+  ];
 
   const todayPriorities = useMemo(() => {
     const priorities = [];
@@ -745,6 +1053,159 @@ export function DashboardView() {
               <HeroMetric label="Net Business Yield" value={formatCurrency(netRevenue)} helper="Collections minus expense outflow" accent="bg-violet-500 text-violet-500" />
             </div>
 
+            <div className="grid gap-4 xl:grid-cols-[1.18fr_0.92fr]">
+              <div className="rounded-[32px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(248,250,252,0.78))] p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)] backdrop-blur-md dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))]">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-zinc-500">Today Operating View</p>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-zinc-400">The few numbers and queues that matter right now</p>
+                  </div>
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white shadow-lg">
+                    <ClipboardList className="h-5 w-5" />
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {todayMetrics.map((item, index) => (
+                    <div
+                      key={item.label}
+                      className={cn(
+                        "rounded-[24px] border px-4 py-4 transition",
+                        index === 0
+                          ? "border-cyan-200/80 bg-cyan-50/70 shadow-sm dark:border-cyan-500/20 dark:bg-cyan-500/10"
+                          : "border-slate-200/70 bg-slate-50/80 dark:border-white/10 dark:bg-white/[0.03]"
+                      )}
+                    >
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-zinc-500">{item.label}</p>
+                      <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">{item.value}</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-zinc-400">{item.helper}</p>
+                    </div>
+                  ))}
+                </div>
+                {todayPriorities.length > 0 ? (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {todayPriorities.slice(0, 3).map((item) => (
+                      <span
+                        key={item.title}
+                        className="rounded-full border border-slate-200 bg-white/90 px-3 py-2 text-xs font-medium text-slate-700 shadow-sm dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-200"
+                      >
+                        {item.title}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="grid gap-4">
+                <div className="rounded-[32px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(248,250,252,0.78))] p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)] backdrop-blur-md dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))]">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-zinc-500">Business Health Score</p>
+                      <p className="mt-1 text-sm text-slate-500 dark:text-zinc-400">A rule-based pulse across cash, delivery, sales, and ops load</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-4xl font-semibold tracking-tight text-slate-950 dark:text-white">{businessHealth.totalScore}</p>
+                      <p className="text-xs font-medium text-slate-500 dark:text-zinc-400">
+                        {businessHealth.totalScore >= 75 ? "Strong operating shape" : businessHealth.totalScore >= 55 ? "Needs attention" : "Priority cleanup needed"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-4 grid gap-3">
+                    {businessHealth.signals.map((signal) => (
+                      <div key={signal.label} className="rounded-[24px] border border-slate-200/70 bg-slate-50/80 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">
+                        <div className="mb-2 flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">{signal.label}</p>
+                          <span className="text-sm font-semibold text-slate-700 dark:text-zinc-200">{signal.score}</span>
+                        </div>
+                        <div className="h-2.5 overflow-hidden rounded-full bg-slate-200 dark:bg-white/10">
+                          <div className={cn("h-full rounded-full", signal.score >= 75 ? "bg-emerald-500" : signal.score >= 55 ? "bg-amber-500" : "bg-rose-500")} style={{ width: `${signal.score}%` }} />
+                        </div>
+                        <p className="mt-2 text-xs text-slate-500 dark:text-zinc-400">{signal.helper}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-[32px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(248,250,252,0.78))] p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)] backdrop-blur-md dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))]">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-zinc-500">Quick Command Bar</p>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-zinc-400">Send a direct instruction and let the assistant apply it to your live data</p>
+                    </div>
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg">
+                      <Command className="h-5 w-5" />
+                    </div>
+                  </div>
+                  <div className="mt-4 rounded-[24px] border border-slate-200/70 bg-slate-50/80 p-3 dark:border-white/10 dark:bg-black/20">
+                    <div className="flex gap-3">
+                      <input
+                        value={commandInput}
+                        onChange={(event) => setCommandInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            runCommand(commandInput);
+                          }
+                        }}
+                        placeholder="Try: Received 15000 from XYZ project"
+                        className="flex h-12 flex-1 rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-800 outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-300 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus-visible:ring-cyan-500/50"
+                      />
+                      <Button type="button" className="h-12 rounded-2xl px-5" onClick={() => runCommand(commandInput)}>
+                        Run
+                      </Button>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500 dark:text-zinc-400">Best for quick entries, updates, follow-ups, and completion actions without opening the full sheets.</p>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {[
+                      "Add lead for ABC Clinic",
+                      "Received 15000 from XYZ project",
+                      "Set follow-up for ABC Clinic tomorrow",
+                      "Add expense 5000 for ads",
+                      "Mark lead ABC Clinic as proposal sent",
+                      "Mark project Alpha as completed"
+                    ].map((command) => (
+                      <button
+                        key={command}
+                        type="button"
+                        onClick={() => runCommand(command)}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-200 dark:hover:border-white/20 dark:hover:bg-white/[0.05]"
+                      >
+                        {command}
+                      </button>
+                    ))}
+                  </div>
+                  {commandFeedback ? (
+                    <div
+                      className={cn(
+                        "mt-3 flex items-center justify-between gap-3 rounded-[18px] border px-3 py-2 text-xs font-medium",
+                        commandFeedback.tone === "success"
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200"
+                          : "border-cyan-200 bg-cyan-50 text-cyan-700 dark:border-cyan-500/20 dark:bg-cyan-500/10 dark:text-cyan-200"
+                      )}
+                    >
+                      <span>{commandFeedback.message}</span>
+                      {commandFeedback.tone === "success" && lastUndoRef.current ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            lastUndoRef.current?.undo();
+                            setCommandFeedback({
+                              tone: "info",
+                              message: `${lastUndoRef.current?.label ?? "Undo"} completed.`
+                            });
+                            lastUndoRef.current = null;
+                          }}
+                          className="shrink-0 rounded-full border border-current/20 px-3 py-1 font-semibold transition hover:bg-white/40 dark:hover:bg-white/10"
+                        >
+                          Undo
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
             <div className="grid gap-4 xl:grid-cols-[1.2fr_0.9fr]">
               <div className="rounded-[30px] border border-white/80 bg-white/72 p-5 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-white/[0.04]">
                 <div className="flex items-center justify-between gap-3">
@@ -757,19 +1218,22 @@ export function DashboardView() {
                   </span>
                 </div>
                 {collectionByProject.length > 0 ? (
-                  <div className="mt-4 h-[220px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={collectionByProject.slice(0, 5)}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
-                        <XAxis dataKey="name" tickLine={false} axisLine={false} stroke="#64748b" hide />
-                        <YAxis tickLine={false} axisLine={false} stroke="#64748b" tickFormatter={(value) => formatNumber(value)} />
-                        <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatCurrency(value)} />
-                        <Bar dataKey="value" fill="#cbd5e1" radius={[10, 10, 0, 0]} />
-                        <Bar dataKey="received" fill="#0f766e" radius={[10, 10, 0, 0]} />
-                        <Bar dataKey="pending" fill="#d97706" radius={[10, 10, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
+                  <>
+                    <div className="mt-4 h-[220px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={collectionByProject.slice(0, 5)}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
+                          <XAxis dataKey="name" tickLine={false} axisLine={false} stroke="#64748b" hide />
+                          <YAxis tickLine={false} axisLine={false} stroke="#64748b" tickFormatter={(value) => formatNumber(value)} />
+                          <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatCurrency(value)} />
+                          <Bar dataKey="value" fill="#cbd5e1" radius={[10, 10, 0, 0]} />
+                          <Bar dataKey="received" fill="#0f766e" radius={[10, 10, 0, 0]} />
+                          <Bar dataKey="pending" fill="#d97706" radius={[10, 10, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <ChartMeta>Based on project value, amount received, and pending amount. Last updated from your live sheets.</ChartMeta>
+                  </>
                 ) : (
                   <div className="mt-4">
                     <EmptyVisual label="Project pulse will appear once project values and collections are added." />
@@ -788,17 +1252,20 @@ export function DashboardView() {
                   </span>
                 </div>
                 {timetableLoadByDay.some((item) => item.value > 0) ? (
-                  <div className="mt-4 h-[220px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={timetableLoadByDay}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
-                        <XAxis dataKey="day" tickLine={false} axisLine={false} stroke="#64748b" />
-                        <YAxis tickLine={false} axisLine={false} stroke="#64748b" />
-                        <Tooltip contentStyle={tooltipStyle} />
-                        <Bar dataKey="value" fill="#2563eb" radius={[10, 10, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
+                  <>
+                    <div className="mt-4 h-[220px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={timetableLoadByDay}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
+                          <XAxis dataKey="day" tickLine={false} axisLine={false} stroke="#64748b" />
+                          <YAxis tickLine={false} axisLine={false} stroke="#64748b" />
+                          <Tooltip contentStyle={tooltipStyle} />
+                          <Bar dataKey="value" fill="#2563eb" radius={[10, 10, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <ChartMeta>Shows filled timetable blocks only. Empty days stay out of the workload signal.</ChartMeta>
+                  </>
                 ) : (
                   <div className="mt-4">
                     <EmptyVisual label="Timetable distribution will show after daily slots are planned." />
@@ -853,159 +1320,161 @@ export function DashboardView() {
         <SignalTile icon={Activity} label="Net Revenue" value={formatCurrency(netRevenue)} helper="Live profit picture after outflow" tone="bg-gradient-to-br from-violet-500 to-fuchsia-600" />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.35fr_0.9fr]">
-        <SectionCard
-          title="AI Executive Analysis"
-          subtitle="Workspace-wide reading across every sheet and operational signal"
-          action={
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                setIsAiLoading(true);
-                setAiError("");
-                try {
-                  const response = await fetch("/api/ai/chat", {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                      prompt:
-                        "Refresh the executive analysis for the full business workspace. Summarize momentum, risks, bottlenecks, automation gaps, and the highest-leverage next moves.",
-                      pathname: "/dashboard",
-                      meetHistory: readMeetHistory()
-                    })
-                  });
+      <VisibilityGate minHeight={420}>
+        <div className="grid gap-4 xl:grid-cols-[1.35fr_0.9fr]">
+          <SectionCard
+            title="AI Executive Analysis"
+            subtitle="Workspace-wide reading across every sheet and operational signal"
+            action={
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  setIsAiLoading(true);
+                  setAiError("");
+                  try {
+                    const response = await fetch("/api/ai/chat", {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json"
+                      },
+                      body: JSON.stringify({
+                        prompt:
+                          "Refresh the executive analysis for the full business workspace. Summarize momentum, risks, bottlenecks, automation gaps, and the highest-leverage next moves.",
+                        pathname: "/dashboard",
+                        meetHistory: readMeetHistory()
+                      })
+                    });
 
-                  const payload = (await response.json()) as { error?: string; message?: string };
-                  if (!response.ok || !payload.message) {
-                    throw new Error(payload.error ?? "AI analysis is unavailable right now.");
+                    const payload = (await response.json()) as { error?: string; message?: string };
+                    if (!response.ok || !payload.message) {
+                      throw new Error(payload.error ?? "AI analysis is unavailable right now.");
+                    }
+                    setAiInsight(payload.message);
+                  } catch (nextError) {
+                    setAiError(nextError instanceof Error ? nextError.message : "AI analysis is unavailable right now.");
+                  } finally {
+                    setIsAiLoading(false);
                   }
-                  setAiInsight(payload.message);
-                } catch (nextError) {
-                  setAiError(nextError instanceof Error ? nextError.message : "AI analysis is unavailable right now.");
-                } finally {
-                  setIsAiLoading(false);
-                }
-              }}
-              className="rounded-2xl"
-            >
-              <RefreshCw className={cn("mr-2 h-4 w-4", isAiLoading ? "animate-spin" : "")} />
-              Refresh AI
-            </Button>
-          }
-        >
-          <div className="grid gap-4 xl:grid-cols-[1.2fr_0.9fr]">
-            <div className="rounded-[26px] border border-slate-200/80 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03]">
-              <div className="flex items-start gap-4">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-500 text-white shadow-lg">
-                  <Sparkles className="h-5 w-5" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-zinc-500">AI Narrative</p>
-                  <p className="mt-3 max-w-4xl text-sm leading-8 text-slate-600 dark:text-zinc-300">
-                    {isAiLoading
-                      ? "Analyzing the latest business data across projects, leads, revenue, content, team, shopping, timetable, meetings, and infrastructure..."
-                      : aiInsight || "Add GEMINI_API_KEY in .env.local to unlock the AI executive readout here."}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid gap-3">
+                }}
+                className="rounded-2xl"
+              >
+                <RefreshCw className={cn("mr-2 h-4 w-4", isAiLoading ? "animate-spin" : "")} />
+                Refresh AI
+              </Button>
+            }
+          >
+            <div className="grid gap-4 xl:grid-cols-[1.2fr_0.9fr]">
               <div className="rounded-[26px] border border-slate-200/80 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03]">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-zinc-500">AI Opportunity Hints</p>
-                <div className="mt-3 grid gap-3">
-                  {aiGuidance.length > 0 ? (
-                    aiGuidance.map((item) => (
-                      <div key={item.title} className={cn("rounded-[20px] border px-3 py-3", item.tone)}>
-                        <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.title}</p>
-                        <p className="mt-1 text-xs leading-6 text-slate-600 dark:text-zinc-300">{item.detail}</p>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="rounded-[20px] border border-slate-200 bg-white px-3 py-3 text-sm text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400">
-                      Add more real operating data and AI opportunity hints will appear here.
-                    </div>
-                  )}
+                <div className="flex items-start gap-4">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-500 text-white shadow-lg">
+                    <Sparkles className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-zinc-500">AI Narrative</p>
+                    <p className="mt-3 max-w-4xl text-sm leading-8 text-slate-600 dark:text-zinc-300">
+                      {isAiLoading
+                        ? "Analyzing the latest business data across projects, leads, revenue, content, team, shopping, timetable, meetings, and infrastructure..."
+                        : aiInsight || "AI analysis is now manual for better speed. Click Refresh AI only when you want a fresh executive readout."}
+                    </p>
+                  </div>
                 </div>
               </div>
 
-              <div className="rounded-[26px] border border-slate-200/80 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03]">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-zinc-500">Display Coverage</p>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  {displayCoverage.map((item) => (
-                    <div key={item.label} className="rounded-[18px] border border-slate-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-white/[0.03]">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-zinc-500">{item.label}</p>
-                      <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">{item.value}</p>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">{item.helper}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-          {aiError ? (
-            <div className="mt-4 rounded-[22px] border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
-              {aiError}
-            </div>
-          ) : null}
-        </SectionCard>
-
-        <SectionCard title="Today's Priorities" subtitle="A command-center view of what deserves action first">
-          <div className="grid gap-4">
-            <div className="grid gap-3">
-              {todayPriorities.length > 0 ? (
-                todayPriorities.map((item, index) => (
-                  <div key={`${item.title}-${index}`} className={cn("rounded-[24px] border px-4 py-4", item.tone)}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-3">
-                        <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-2xl bg-white/80 text-slate-700 dark:bg-white/10 dark:text-zinc-100">
-                          <CalendarClock className="h-4 w-4" />
-                        </div>
-                        <div>
+              <div className="grid gap-3">
+                <div className="rounded-[26px] border border-slate-200/80 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-zinc-500">AI Opportunity Hints</p>
+                  <div className="mt-3 grid gap-3">
+                    {aiGuidance.length > 0 ? (
+                      aiGuidance.map((item) => (
+                        <div key={item.title} className={cn("rounded-[20px] border px-3 py-3", item.tone)}>
                           <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.title}</p>
                           <p className="mt-1 text-xs leading-6 text-slate-600 dark:text-zinc-300">{item.detail}</p>
                         </div>
+                      ))
+                    ) : (
+                      <div className="rounded-[20px] border border-slate-200 bg-white px-3 py-3 text-sm text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400">
+                        Add more real operating data and AI opportunity hints will appear here.
                       </div>
-                      <ArrowUpRight className="mt-1 h-4 w-4 text-slate-400" />
-                    </div>
+                    )}
                   </div>
-                ))
-              ) : (
-                <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/80 px-4 py-5 text-sm text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400">
-                  The daily board is clear right now. No urgent operational priorities are waiting.
                 </div>
-              )}
-            </div>
 
-            <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03]">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-zinc-500">Anomaly Callouts</p>
-              <div className="mt-3 max-h-[320px] space-y-3 overflow-y-auto pr-1">
-                {anomalies.length > 0 ? (
-                  anomalies.map((item) => (
-                    <div key={item.title} className="flex items-start gap-3 rounded-[20px] border border-slate-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-white/[0.03]">
-                      <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-600 dark:text-rose-300">
-                        <AlertTriangle className="h-4 w-4" />
+                <div className="rounded-[26px] border border-slate-200/80 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-zinc-500">Display Coverage</p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {displayCoverage.map((item) => (
+                      <div key={item.label} className="rounded-[18px] border border-slate-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-white/[0.03]">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-zinc-500">{item.label}</p>
+                        <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">{item.value}</p>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">{item.helper}</p>
                       </div>
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.title}</p>
-                        <p className="mt-1 text-xs leading-6 text-slate-500 dark:text-zinc-400">{item.detail}</p>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+            {aiError ? (
+              <div className="mt-4 rounded-[22px] border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
+                {aiError}
+              </div>
+            ) : null}
+          </SectionCard>
+
+          <SectionCard title="Today's Priorities" subtitle="A command-center view of what deserves action first">
+            <div className="grid gap-4">
+              <div className="grid gap-3">
+                {todayPriorities.length > 0 ? (
+                  todayPriorities.map((item, index) => (
+                    <div key={`${item.title}-${index}`} className={cn("rounded-[24px] border px-4 py-4", item.tone)}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-2xl bg-white/80 text-slate-700 dark:bg-white/10 dark:text-zinc-100">
+                            <CalendarClock className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.title}</p>
+                            <p className="mt-1 text-xs leading-6 text-slate-600 dark:text-zinc-300">{item.detail}</p>
+                          </div>
+                        </div>
+                        <ArrowUpRight className="mt-1 h-4 w-4 text-slate-400" />
                       </div>
                     </div>
                   ))
                 ) : (
-                  <div className="rounded-[20px] border border-slate-200 bg-white px-3 py-3 text-sm text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400">
-                    No unusual swings are standing out right now.
+                  <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/80 px-4 py-5 text-sm text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400">
+                    The daily board is clear right now. No urgent operational priorities are waiting.
                   </div>
                 )}
               </div>
+
+              <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-zinc-500">Anomaly Callouts</p>
+                <div className="mt-3 max-h-[320px] space-y-3 overflow-y-auto pr-1">
+                  {anomalies.length > 0 ? (
+                    anomalies.map((item) => (
+                      <div key={item.title} className="flex items-start gap-3 rounded-[20px] border border-slate-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-white/[0.03]">
+                        <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-600 dark:text-rose-300">
+                          <AlertTriangle className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.title}</p>
+                          <p className="mt-1 text-xs leading-6 text-slate-500 dark:text-zinc-400">{item.detail}</p>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-[20px] border border-slate-200 bg-white px-3 py-3 text-sm text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400">
+                      No unusual swings are standing out right now.
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        </SectionCard>
-      </div>
+          </SectionCard>
+        </div>
+      </VisibilityGate>
 
       <SectionCard
         title="This Week vs Last Week"
@@ -1018,61 +1487,65 @@ export function DashboardView() {
         </div>
       </SectionCard>
 
-      <SectionCard
-        title="Boardroom Drilldown"
-        subtitle="Switch between financial, sales, operations, and infrastructure views"
-        action={
-          <div className="flex flex-wrap gap-2">
-            {[
-              { key: "revenue", label: "Revenue" },
-              { key: "sales", label: "Sales" },
-              { key: "operations", label: "Operations" },
-              { key: "infrastructure", label: "Infrastructure" }
-            ].map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setActiveTab(tab.key as DashboardTab)}
-                className={cn(
-                  "rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition",
-                  activeTab === tab.key
-                    ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-950"
-                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:border-white/20 dark:hover:text-white"
-                )}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        }
-      >
+      <VisibilityGate minHeight={560}>
+        <SectionCard
+          title="Boardroom Drilldown"
+          subtitle="Switch between financial, sales, operations, and infrastructure views"
+          action={
+            <div className="flex flex-wrap gap-2">
+              {[
+                { key: "revenue", label: "Revenue" },
+                { key: "sales", label: "Sales" },
+                { key: "operations", label: "Operations" },
+                { key: "infrastructure", label: "Infrastructure" }
+              ].map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setActiveTab(tab.key as DashboardTab)}
+                  className={cn(
+                    "rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition",
+                    activeTab === tab.key
+                      ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-950"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:border-white/20 dark:hover:text-white"
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          }
+        >
         {activeTab === "revenue" ? (
           <div className="space-y-4">
             <div className="grid gap-4 xl:grid-cols-[1.6fr_1fr]">
               <SectionCard title="Revenue command view" subtitle="Monthly collections against signed project value" className="shadow-none">
                 {monthlyRevenue.length > 0 ? (
-                  <div className="h-[400px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={monthlyRevenue}>
-                        <defs>
-                          <linearGradient id="receivedArea" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#0f766e" stopOpacity={0.45} />
-                            <stop offset="100%" stopColor="#0f766e" stopOpacity={0.05} />
-                          </linearGradient>
-                          <linearGradient id="targetArea" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#2563eb" stopOpacity={0.26} />
-                            <stop offset="100%" stopColor="#2563eb" stopOpacity={0.04} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.18)" />
-                        <XAxis dataKey="month" tickLine={false} axisLine={false} stroke="#64748b" />
-                        <YAxis tickLine={false} axisLine={false} stroke="#64748b" tickFormatter={(value) => formatNumber(value)} />
-                        <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatCurrency(value)} />
-                        <Area type="monotone" dataKey="target" stroke="#2563eb" fill="url(#targetArea)" strokeWidth={2} />
-                        <Area type="monotone" dataKey="revenue" stroke="#0f766e" fill="url(#receivedArea)" strokeWidth={3} />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
+                  <>
+                    <div className="h-[400px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={monthlyRevenue}>
+                          <defs>
+                            <linearGradient id="receivedArea" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#0f766e" stopOpacity={0.45} />
+                              <stop offset="100%" stopColor="#0f766e" stopOpacity={0.05} />
+                            </linearGradient>
+                            <linearGradient id="targetArea" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#2563eb" stopOpacity={0.26} />
+                              <stop offset="100%" stopColor="#2563eb" stopOpacity={0.04} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.18)" />
+                          <XAxis dataKey="month" tickLine={false} axisLine={false} stroke="#64748b" />
+                          <YAxis tickLine={false} axisLine={false} stroke="#64748b" tickFormatter={(value) => formatNumber(value)} />
+                          <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatCurrency(value)} />
+                          <Area type="monotone" dataKey="target" stroke="#2563eb" fill="url(#targetArea)" strokeWidth={2} />
+                          <Area type="monotone" dataKey="revenue" stroke="#0f766e" fill="url(#receivedArea)" strokeWidth={3} />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <ChartMeta>Based on amount received versus signed project value by month. Excludes manual expenses.</ChartMeta>
+                  </>
                 ) : (
                   <EmptyVisual label="Add project dates and values to see monthly revenue intelligence." />
                 )}
@@ -1106,24 +1579,28 @@ export function DashboardView() {
                 ) : (
                   <EmptyVisual label="Project status visuals will appear once projects are added." />
                 )}
+                <ChartMeta>Status shape uses the live project sheet only. Useful for delivery balance, not cash realization.</ChartMeta>
               </SectionCard>
             </div>
 
             <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
               <SectionCard title="Collections by project" subtitle="Cash locked inside open accounts" className="shadow-none">
                 {collectionByProject.length > 0 ? (
-                  <div className="h-[340px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={collectionByProject} layout="vertical" margin={{ left: 12, right: 8 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
-                        <XAxis type="number" tickLine={false} axisLine={false} stroke="#64748b" tickFormatter={(value) => formatNumber(value)} />
-                        <YAxis dataKey="name" type="category" width={112} tickLine={false} axisLine={false} stroke="#64748b" />
-                        <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatCurrency(value)} />
-                        <Bar dataKey="received" stackId="collections" fill="#0f766e" radius={[0, 8, 8, 0]} />
-                        <Bar dataKey="pending" stackId="collections" fill="#d97706" radius={[0, 8, 8, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
+                  <>
+                    <div className="h-[340px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={collectionByProject} layout="vertical" margin={{ left: 12, right: 8 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
+                          <XAxis type="number" tickLine={false} axisLine={false} stroke="#64748b" tickFormatter={(value) => formatNumber(value)} />
+                          <YAxis dataKey="name" type="category" width={112} tickLine={false} axisLine={false} stroke="#64748b" />
+                          <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatCurrency(value)} />
+                          <Bar dataKey="received" stackId="collections" fill="#0f766e" radius={[0, 8, 8, 0]} />
+                          <Bar dataKey="pending" stackId="collections" fill="#d97706" radius={[0, 8, 8, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <ChartMeta>Based on live project receipts and pending balances. Keeps collection follow-up priorities obvious.</ChartMeta>
+                  </>
                 ) : (
                   <EmptyVisual label="Project collection analytics will appear after project values are entered." />
                 )}
@@ -1131,18 +1608,21 @@ export function DashboardView() {
 
               <SectionCard title="Revenue mix" subtitle="Category contribution to signed business" className="shadow-none">
                 {revenueMix.length > 0 ? (
-                  <div className="h-[340px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie data={revenueMix} dataKey="value" nameKey="name" innerRadius={72} outerRadius={112}>
-                          {revenueMix.map((item, index) => (
-                            <Cell key={item.name} fill={COLORS[index % COLORS.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatCurrency(value)} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
+                  <>
+                    <div className="h-[340px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie data={revenueMix} dataKey="value" nameKey="name" innerRadius={72} outerRadius={112}>
+                            {revenueMix.map((item, index) => (
+                              <Cell key={item.name} fill={COLORS[index % COLORS.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatCurrency(value)} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <ChartMeta>Based on project categories and signed value. This is portfolio mix, not collected cash.</ChartMeta>
+                  </>
                 ) : (
                   <EmptyVisual label="Revenue mix appears when project categories are filled." />
                 )}
@@ -1155,30 +1635,33 @@ export function DashboardView() {
           <div className="grid gap-4 xl:grid-cols-[1.1fr_1fr_1fr]">
             <SectionCard title="Lead conversion engine" subtitle="Stage count and value concentration" className="shadow-none">
               {leadStatus.length > 0 || leadValueData.length > 0 ? (
-                <div className="grid gap-4">
-                  <div className="h-[180px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={leadStatus}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
-                        <XAxis dataKey="stage" tickLine={false} axisLine={false} stroke="#64748b" />
-                        <YAxis tickLine={false} axisLine={false} stroke="#64748b" />
-                        <Tooltip contentStyle={tooltipStyle} />
-                        <Bar dataKey="value" radius={[12, 12, 0, 0]} fill="#7c3aed" />
-                      </BarChart>
-                    </ResponsiveContainer>
+                <>
+                  <div className="grid gap-4">
+                    <div className="h-[180px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={leadStatus}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
+                          <XAxis dataKey="stage" tickLine={false} axisLine={false} stroke="#64748b" />
+                          <YAxis tickLine={false} axisLine={false} stroke="#64748b" />
+                          <Tooltip contentStyle={tooltipStyle} />
+                          <Bar dataKey="value" radius={[12, 12, 0, 0]} fill="#7c3aed" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="h-[140px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={leadValueData}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
+                          <XAxis dataKey="name" tickLine={false} axisLine={false} stroke="#64748b" hide />
+                          <YAxis tickLine={false} axisLine={false} stroke="#64748b" tickFormatter={(value) => formatNumber(value)} />
+                          <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatCurrency(value)} />
+                          <Bar dataKey="value" radius={[12, 12, 0, 0]} fill="#2563eb" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
                   </div>
-                  <div className="h-[140px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={leadValueData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
-                        <XAxis dataKey="name" tickLine={false} axisLine={false} stroke="#64748b" hide />
-                        <YAxis tickLine={false} axisLine={false} stroke="#64748b" tickFormatter={(value) => formatNumber(value)} />
-                        <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatCurrency(value)} />
-                        <Bar dataKey="value" radius={[12, 12, 0, 0]} fill="#2563eb" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
+                  <ChartMeta>Uses live lead stages and expected value. Helpful for pipeline quality, not signed revenue.</ChartMeta>
+                </>
               ) : (
                 <EmptyVisual label="Lead analytics will appear after leads are added." />
               )}
@@ -1186,18 +1669,21 @@ export function DashboardView() {
 
             <SectionCard title="Service momentum" subtitle="Demand compared with delivery output" className="shadow-none">
               {serviceDemand.length > 0 ? (
-                <div className="h-[340px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={serviceDemand}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
-                      <XAxis dataKey="name" tickLine={false} axisLine={false} stroke="#64748b" />
-                      <YAxis tickLine={false} axisLine={false} stroke="#64748b" />
-                      <Tooltip contentStyle={tooltipStyle} />
-                      <Bar dataKey="leads" fill="#06b6d4" radius={[10, 10, 0, 0]} />
-                      <Bar dataKey="projects" fill="#0f766e" radius={[10, 10, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
+                <>
+                  <div className="h-[340px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={serviceDemand}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
+                        <XAxis dataKey="name" tickLine={false} axisLine={false} stroke="#64748b" />
+                        <YAxis tickLine={false} axisLine={false} stroke="#64748b" />
+                        <Tooltip contentStyle={tooltipStyle} />
+                        <Bar dataKey="leads" fill="#06b6d4" radius={[10, 10, 0, 0]} />
+                        <Bar dataKey="projects" fill="#0f766e" radius={[10, 10, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <ChartMeta>Compares lead demand versus delivered project volume by service. Good for spotting fulfillment imbalance.</ChartMeta>
+                </>
               ) : (
                 <EmptyVisual label="Service analytics will appear once services are entered." />
               )}
@@ -1224,17 +1710,20 @@ export function DashboardView() {
           <div className="grid gap-4 xl:grid-cols-[1fr_1fr_1fr]">
             <SectionCard title="Team capacity" subtitle="Availability-weighted execution bandwidth" className="shadow-none">
               {teamCapacity.length > 0 ? (
-                <div className="h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={teamCapacity}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
-                      <XAxis dataKey="name" tickLine={false} axisLine={false} stroke="#64748b" />
-                      <YAxis tickLine={false} axisLine={false} stroke="#64748b" />
-                      <Tooltip contentStyle={tooltipStyle} />
-                      <Bar dataKey="capacity" fill="#0f766e" radius={[10, 10, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
+                <>
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={teamCapacity}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
+                        <XAxis dataKey="name" tickLine={false} axisLine={false} stroke="#64748b" />
+                        <YAxis tickLine={false} axisLine={false} stroke="#64748b" />
+                        <Tooltip contentStyle={tooltipStyle} />
+                        <Bar dataKey="capacity" fill="#0f766e" radius={[10, 10, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <ChartMeta>Based on current team allocation rows. Higher bars mean more execution bandwidth available now.</ChartMeta>
+                </>
               ) : (
                 <EmptyVisual label="Team utilization appears once team members are added." />
               )}
@@ -1242,17 +1731,20 @@ export function DashboardView() {
 
             <SectionCard title="Content pipeline" subtitle="Publishing stage distribution" className="shadow-none">
               {contentStageData.length > 0 ? (
-                <div className="h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={contentStageData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
-                      <XAxis dataKey="name" tickLine={false} axisLine={false} stroke="#64748b" />
-                      <YAxis tickLine={false} axisLine={false} stroke="#64748b" />
-                      <Tooltip contentStyle={tooltipStyle} />
-                      <Bar dataKey="value" fill="#7c3aed" radius={[10, 10, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
+                <>
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={contentStageData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
+                        <XAxis dataKey="name" tickLine={false} axisLine={false} stroke="#64748b" />
+                        <YAxis tickLine={false} axisLine={false} stroke="#64748b" />
+                        <Tooltip contentStyle={tooltipStyle} />
+                        <Bar dataKey="value" fill="#7c3aed" radius={[10, 10, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <ChartMeta>Uses the live content sheet stage values. This shows workflow shape, not traffic or reach.</ChartMeta>
+                </>
               ) : (
                 <EmptyVisual label="Content stage analytics appear when content rows are added." />
               )}
@@ -1322,57 +1814,59 @@ export function DashboardView() {
             </SectionCard>
           </div>
         ) : null}
-      </SectionCard>
+        </SectionCard>
+      </VisibilityGate>
 
-      <SectionCard
-        title="Weekly CEO Report"
-        subtitle="Auto-generated leadership summary across the full business workspace"
-        action={
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={async () => {
-              setIsCeoLoading(true);
-              setCeoError("");
-              try {
-                const response = await fetch("/api/ai/chat", {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json"
-                  },
-                  body: JSON.stringify({
-                    prompt:
-                      "Refresh the weekly CEO report from the entire workspace. Cover wins, blockers, financial movement, delivery risk, pipeline quality, team load, and the top 3 next moves.",
-                    pathname: "/dashboard",
-                    meetHistory: readMeetHistory()
-                  })
-                });
+      <VisibilityGate minHeight={320}>
+        <SectionCard
+          title="Weekly CEO Report"
+          subtitle="Auto-generated leadership summary across the full business workspace"
+          action={
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                setIsCeoLoading(true);
+                setCeoError("");
+                try {
+                  const response = await fetch("/api/ai/chat", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                      prompt:
+                        "Refresh the weekly CEO report from the entire workspace. Cover wins, blockers, financial movement, delivery risk, pipeline quality, team load, and the top 3 next moves.",
+                      pathname: "/dashboard",
+                      meetHistory: readMeetHistory()
+                    })
+                  });
 
-                const payload = (await response.json()) as { error?: string; message?: string };
-                if (!response.ok || !payload.message) {
-                  throw new Error(payload.error ?? "Weekly CEO report is unavailable right now.");
+                  const payload = (await response.json()) as { error?: string; message?: string };
+                  if (!response.ok || !payload.message) {
+                    throw new Error(payload.error ?? "Weekly CEO report is unavailable right now.");
+                  }
+                  setCeoReport(payload.message);
+                } catch (nextError) {
+                  setCeoError(nextError instanceof Error ? nextError.message : "Weekly CEO report is unavailable right now.");
+                } finally {
+                  setIsCeoLoading(false);
                 }
-                setCeoReport(payload.message);
-              } catch (nextError) {
-                setCeoError(nextError instanceof Error ? nextError.message : "Weekly CEO report is unavailable right now.");
-              } finally {
-                setIsCeoLoading(false);
-              }
-            }}
-            className="rounded-2xl"
-          >
-            <RefreshCw className={cn("mr-2 h-4 w-4", isCeoLoading ? "animate-spin" : "")} />
-            Refresh Report
-          </Button>
-        }
-      >
+              }}
+              className="rounded-2xl"
+            >
+              <RefreshCw className={cn("mr-2 h-4 w-4", isCeoLoading ? "animate-spin" : "")} />
+              Refresh Report
+            </Button>
+          }
+        >
         <div className="grid gap-4 xl:grid-cols-[1.25fr_0.9fr]">
           <div className="rounded-[28px] border border-slate-200/80 bg-slate-50/70 p-5 dark:border-white/10 dark:bg-white/[0.03]">
             <p className="text-sm leading-8 text-slate-600 dark:text-zinc-300">
               {isCeoLoading
                 ? "Preparing the weekly CEO report from projects, leads, revenue, team, content, shopping, timetable, meetings, and infrastructure..."
-                : ceoReport || "Add GEMINI_API_KEY in .env.local to unlock the automated weekly CEO report."}
+                : ceoReport || "Weekly CEO report is now generated on demand for better performance. Click Refresh Report when you need it."}
             </p>
           </div>
           <div className="grid gap-3">
@@ -1399,7 +1893,8 @@ export function DashboardView() {
             {ceoError}
           </div>
         ) : null}
-      </SectionCard>
+        </SectionCard>
+      </VisibilityGate>
     </div>
   );
 }

@@ -7,13 +7,18 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? "";
-  const model = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
+  const openRouterApiKey = process.env.OPENROUTER_API_KEY ?? "";
+  const geminiApiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? "";
+  const configured = Boolean(openRouterApiKey || geminiApiKey);
+  const provider = openRouterApiKey ? "OpenRouter" : geminiApiKey ? "Gemini" : "";
+  const model = openRouterApiKey
+    ? process.env.OPENROUTER_MODEL ?? "openai/gpt-4o-mini"
+    : process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
 
   return NextResponse.json(
     {
-      configured: Boolean(apiKey),
-      provider: "Gemini",
+      configured,
+      provider,
       model
     },
     { headers: { "Cache-Control": "no-store" } }

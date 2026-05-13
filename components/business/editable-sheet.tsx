@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowLeft,
@@ -31,6 +31,89 @@ type QuickView = {
   label: string;
   matches: (row: Record<string, CellValue>) => boolean;
 };
+
+type BufferedInputProps = {
+  className: string;
+  value: CellValue | undefined;
+  type: "text" | "number" | "date";
+  onCommit: (nextValue: string) => void;
+  min?: number;
+  max?: number;
+  suffix?: string;
+};
+
+const BufferedInput = memo(function BufferedInput({
+  className,
+  value,
+  type,
+  onCommit,
+  min,
+  max,
+  suffix
+}: BufferedInputProps) {
+  const [localValue, setLocalValue] = useState(String(value ?? ""));
+
+  useEffect(() => {
+    setLocalValue(String(value ?? ""));
+  }, [value]);
+
+  return (
+    <div className={suffix ? "relative" : undefined}>
+      <input
+        type={type}
+        value={localValue}
+        onChange={(event) => setLocalValue(event.target.value)}
+        onBlur={() => {
+          if (localValue !== String(value ?? "")) onCommit(localValue);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.currentTarget.blur();
+          }
+        }}
+        onWheel={(event) => {
+          if (type === "number") event.currentTarget.blur();
+        }}
+        suppressHydrationWarning
+        className={`${className} ${suffix ? "pr-8" : ""}`}
+        {...(type === "number" ? { min, max } : {})}
+      />
+      {suffix ? (
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-slate-500 dark:text-zinc-400">
+          {suffix}
+        </span>
+      ) : null}
+    </div>
+  );
+});
+
+const BufferedTextarea = memo(function BufferedTextarea({
+  className,
+  value,
+  onCommit
+}: {
+  className: string;
+  value: CellValue | undefined;
+  onCommit: (nextValue: string) => void;
+}) {
+  const [localValue, setLocalValue] = useState(String(value ?? ""));
+
+  useEffect(() => {
+    setLocalValue(String(value ?? ""));
+  }, [value]);
+
+  return (
+    <textarea
+      value={localValue}
+      onChange={(event) => setLocalValue(event.target.value)}
+      onBlur={() => {
+        if (localValue !== String(value ?? "")) onCommit(localValue);
+      }}
+      suppressHydrationWarning
+      className={className}
+    />
+  );
+});
 
 function shouldRenderAsSelect(sheetKey: SheetKey, column: SheetColumn) {
   if (column.type === "select") return true;
@@ -117,11 +200,14 @@ function getCellClasses(column: SheetColumn, value: CellValue | undefined) {
     "h-11 w-full rounded-2xl border px-3 text-sm text-slate-800 dark:text-zinc-100 outline-none transition-all focus-visible:ring-2 focus-visible:ring-fuchsia-400 dark:focus-visible:ring-cyan-500/50";
 
   if (column.type === "select") {
-    // UPDATED: Colorful glassmorphism for dropdown cells in dark mode
-    return `${base} ${getOptionClasses(String(value ?? ""))} shadow-lg dark:border-fuchsia-500/40 dark:bg-gradient-to-r dark:from-indigo-900/40 dark:via-purple-900/40 dark:to-fuchsia-900/40 dark:text-fuchsia-50 dark:shadow-[inset_0_0_15px_rgba(192,38,211,0.2)]`;
+    return `${base} ${getOptionClasses(String(value ?? ""))} shadow-lg dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 dark:[color-scheme:dark]`;
   }
 
   return `${base} border-slate-200 dark:border-white/10 bg-white/90 dark:bg-zinc-900 shadow-[0_12px_30px_rgba(31,41,55,0.06)] dark:shadow-[0_12px_30px_rgba(0,0,0,0.4)]`;
+}
+
+function getDarkSelectClasses(extra = "") {
+  return `h-10 w-full rounded-2xl border border-slate-200 bg-white/90 text-xs text-slate-800 outline-none dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 dark:[color-scheme:dark] ${extra}`.trim();
 }
 
 function toDayString(value: unknown) {
@@ -151,6 +237,15 @@ function formatTimetableHeader(columnId: string, fallbackLabel: string, now: Dat
   return `${fallbackLabel} - ${dateLabel}`;
 }
 
+function getVisibleTimetableDayIds(now: Date) {
+  const weekdayOrder = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"] as const;
+  const reference = getTimetableReferenceDate(now);
+  const todayDayId = weekdayOrder[reference.getDay()];
+  const tomorrowDayId = weekdayOrder[(reference.getDay() + 1) % weekdayOrder.length];
+
+  return new Set<string>([todayDayId, tomorrowDayId]);
+}
+
 function buildQuickViews(sheetKey: SheetKey): QuickView[] {
   const today = formatLocalDateKey(new Date());
   switch (sheetKey) {
@@ -163,6 +258,173 @@ function buildQuickViews(sheetKey: SheetKey): QuickView[] {
     default: return [{ id: "all", label: "All", matches: () => true }];
   }
 }
+
+type SheetRowViewProps = {
+  row: Record<string, CellValue>;
+  rowIndex: number;
+  displayIndex: number;
+  height: number;
+  displayColumns: SheetColumn[];
+  sheetRowsLength: number;
+  sheetKey: SheetKey;
+  servicesSheetRows: Record<string, CellValue>[];
+  columnWidths: Record<string, number>;
+  deleteRow: (sheet: SheetKey, rowIndex: number) => void;
+  moveRow: (sheet: SheetKey, fromIndex: number, toIndex: number) => void;
+  updateCell: (sheet: SheetKey, rowIndex: number, columnId: string, value: CellValue) => void;
+  addColumnOption: (sheet: SheetKey, columnId: string, option: string) => void;
+  customOptionDrafts: Record<string, string>;
+  setCustomDraft: (rowId: string, columnId: string, value: string) => void;
+  rowResizeStart: (rowIndex: number, startY: number, startHeight: number) => void;
+  autoRowHeight: (rowIndex: number) => void;
+};
+
+const SheetRowView = memo(function SheetRowView({
+  row,
+  rowIndex,
+  displayIndex,
+  height,
+  displayColumns,
+  sheetRowsLength,
+  sheetKey,
+  servicesSheetRows,
+  columnWidths,
+  deleteRow,
+  moveRow,
+  updateCell,
+  addColumnOption,
+  customOptionDrafts,
+  setCustomDraft,
+  rowResizeStart,
+  autoRowHeight
+}: SheetRowViewProps) {
+  return (
+    <tr className="group" style={{ height: `${height}px` }}>
+      <td className="sticky left-0 z-10 border-b border-slate-200 dark:border-white/10 bg-white/95 dark:bg-zinc-900/95 px-3 py-2 text-sm text-slate-700 dark:text-zinc-200 shadow-sm">
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-semibold">{displayIndex + 1}</span>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" type="button" className="h-8 w-8 rounded-xl dark:hover:bg-white/10" onClick={() => moveRow(sheetKey, rowIndex, rowIndex - 1)} disabled={rowIndex === 0}>
+              <ArrowUp className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" type="button" className="h-8 w-8 rounded-xl dark:hover:bg-white/10" onClick={() => moveRow(sheetKey, rowIndex, rowIndex + 1)} disabled={rowIndex === sheetRowsLength - 1}>
+              <ArrowDown className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        <div
+          className="absolute inset-x-0 bottom-0 h-6 cursor-row-resize"
+          onMouseDown={(event) => {
+            event.preventDefault();
+            rowResizeStart(rowIndex, event.clientY, height);
+          }}
+          onDoubleClick={() => autoRowHeight(rowIndex)}
+        >
+          <div className="mx-auto h-1 w-12 rounded-full bg-slate-200/70 dark:bg-white/10 transition hover:bg-slate-400/90 dark:hover:bg-cyan-500/50" />
+        </div>
+      </td>
+      {displayColumns.map((column) => {
+        const value = row[column.id];
+        const dynamicOptions = sheetKey === "leads" && column.id === "servicePitch" ? servicesSheetRows.map((item) => String(item.serviceName ?? "")).filter(Boolean) : [];
+        const options = Array.from(new Set([...getColumnOptions(sheetKey, column), ...dynamicOptions]));
+        const shouldUseSelect = shouldRenderAsSelect(sheetKey, column);
+        const draftKey = `${String(row.id)}:${column.id}`;
+        const isCustomMode = shouldUseSelect && String(value ?? "") === "__custom__";
+        const numberBounds = column.type === "number" ? getNumberInputBounds(sheetKey, row, column.id) : {};
+
+        return (
+          <td
+            key={column.id}
+            className="border-b border-slate-200 dark:border-white/10 bg-gradient-to-b from-white/50 via-slate-50 to-fuchsia-50 dark:from-zinc-900/50 dark:via-zinc-800/50 dark:to-zinc-900/50 px-2 py-2 align-top group-hover:from-white/80 group-hover:to-fuchsia-50/60 dark:group-hover:from-zinc-800/80 dark:group-hover:via-zinc-800/80 dark:group-hover:to-zinc-800/80"
+            style={{ width: `${columnWidths[column.id] ?? 180}px`, minWidth: `${columnWidths[column.id] ?? 180}px` }}
+          >
+            {shouldUseSelect ? (
+              <div className="space-y-2">
+                <select
+                  value={String(value ?? "")}
+                  onChange={(event) => updateCell(sheetKey, rowIndex, column.id, event.target.value)}
+                  suppressHydrationWarning
+                  className={getCellClasses({ ...column, type: "select" }, value)}
+                >
+                  <option value="">Select</option>
+                  {options.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                  <option value="__custom__">Others - Add New</option>
+                </select>
+                {isCustomMode ? (
+                  <div className="flex gap-2">
+                    <Input
+                      value={customOptionDrafts[draftKey] ?? ""}
+                      onChange={(event) => setCustomDraft(String(row.id), column.id, event.target.value)}
+                      placeholder={`Add new ${column.label}`}
+                      className="h-10 rounded-xl dark:bg-zinc-900 dark:border-white/10 dark:text-zinc-100"
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          const nextOption = (customOptionDrafts[draftKey] ?? "").trim();
+                          if (!nextOption) return;
+                          addColumnOption(sheetKey, column.id, nextOption);
+                          updateCell(sheetKey, rowIndex, column.id, nextOption);
+                          setCustomDraft(String(row.id), column.id, "");
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="shrink-0 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+                      onClick={() => {
+                        const nextOption = (customOptionDrafts[draftKey] ?? "").trim();
+                        if (!nextOption) return;
+                        addColumnOption(sheetKey, column.id, nextOption);
+                        updateCell(sheetKey, rowIndex, column.id, nextOption);
+                        setCustomDraft(String(row.id), column.id, "");
+                      }}
+                    >
+                      Add
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            ) : column.type === "textarea" ? (
+              <BufferedTextarea
+                value={value}
+                onCommit={(nextValue) => updateCell(sheetKey, rowIndex, column.id, nextValue)}
+                className="min-h-[96px] w-full resize-none rounded-2xl border border-slate-200 dark:border-white/10 bg-white/90 dark:bg-zinc-900 px-3 py-3 text-sm text-slate-800 dark:text-zinc-100 outline-none shadow-[0_12px_30px_rgba(31,41,55,0.06)] dark:shadow-none focus-visible:ring-2 focus-visible:ring-fuchsia-400 dark:focus-visible:ring-cyan-500/50"
+              />
+            ) : (
+              <BufferedInput
+                type={column.type === "number" ? "number" : column.type === "date" ? "date" : "text"}
+                value={value}
+                onCommit={(nextValue) => updateCell(sheetKey, rowIndex, column.id, castValue(column.type, nextValue))}
+                className={getCellClasses(column, value)}
+                min={numberBounds.min}
+                max={numberBounds.max}
+                suffix={column.id === "completionPercent" ? "%" : undefined}
+              />
+            )}
+          </td>
+        );
+      })}
+      <td className="sticky right-0 border-b border-slate-200 dark:border-white/10 bg-white/90 dark:bg-zinc-900/90 px-2 py-2 text-center align-top">
+        <Button variant="ghost" size="icon" type="button" className="h-10 w-10 rounded-2xl dark:hover:bg-rose-500/10" onClick={() => deleteRow(sheetKey, rowIndex)} aria-label="Delete row">
+          <Trash2 className="h-4 w-4 text-rose-500 dark:text-rose-400" />
+        </Button>
+      </td>
+    </tr>
+  );
+}, (prev, next) =>
+  prev.row === next.row &&
+  prev.rowIndex === next.rowIndex &&
+  prev.displayIndex === next.displayIndex &&
+  prev.height === next.height &&
+  prev.displayColumns === next.displayColumns &&
+  prev.sheetRowsLength === next.sheetRowsLength &&
+  prev.servicesSheetRows === next.servicesSheetRows &&
+  prev.columnWidths === next.columnWidths &&
+  prev.customOptionDrafts === next.customOptionDrafts
+);
 
 export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
   const sheetMeta = sheetTitles[sheetKey];
@@ -290,10 +552,18 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
   const displayColumns = useMemo(() => {
     if (!isMounted || sheetKey !== "timetable") return sheet.columns;
     const now = new Date();
-    return sheet.columns.map((column) => {
-      if (!["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].includes(column.id)) return column;
-      return { ...column, label: formatTimetableHeader(column.id, column.label, now) };
-    });
+    const visibleDayIds = getVisibleTimetableDayIds(now);
+
+    return sheet.columns
+      .filter((column) => {
+        if (!["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].includes(column.id)) return true;
+        return visibleDayIds.has(column.id);
+      })
+      .map((column) => {
+        if (!["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].includes(column.id)) return column;
+
+        return { ...column, label: formatTimetableHeader(column.id, column.label, now) };
+      });
   }, [isMounted, sheet.columns, sheetKey]);
 
   const filteredRows = useMemo(() => {
@@ -356,14 +626,16 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
     setCustomOptionDrafts((current) => ({ ...current, [`${rowId}:${columnId}`]: value }));
   };
 
-  const addCustomOption = (rowId: string, rowIndex: number, column: SheetColumn) => {
-    const draftKey = `${rowId}:${column.id}`;
-    const nextOption = (customOptionDrafts[draftKey] ?? "").trim();
-    if (!nextOption) return;
-    addColumnOption(sheetKey, column.id, nextOption);
-    updateCell(sheetKey, rowIndex, column.id, nextOption);
-    setCustomOptionDrafts((current) => ({ ...current, [draftKey]: "" }));
-  };
+  const handleDeleteRow = useCallback((targetSheet: SheetKey, rowIndex: number) => deleteRow(targetSheet, rowIndex), [deleteRow]);
+  const handleMoveRow = useCallback((targetSheet: SheetKey, fromIndex: number, toIndex: number) => moveRow(targetSheet, fromIndex, toIndex), [moveRow]);
+  const handleUpdateCell = useCallback((targetSheet: SheetKey, rowIndex: number, columnId: string, value: CellValue) => updateCell(targetSheet, rowIndex, columnId, value), [updateCell]);
+  const handleAddColumnOption = useCallback((targetSheet: SheetKey, columnId: string, option: string) => addColumnOption(targetSheet, columnId, option), [addColumnOption]);
+  const handleRowResizeStart = useCallback((rowIndex: number, startY: number, startHeight: number) => {
+    setRowResizing({ rowIndex, startY, startHeight });
+  }, []);
+  const handleAutoRowHeight = useCallback((rowIndex: number) => {
+    setRowHeights((prev) => ({ ...prev, [rowIndex]: getAutoRowHeight(sheet, rowIndex) }));
+  }, [sheet]);
 
   if (!isMounted) {
     return (
@@ -470,8 +742,7 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
                     setFilterValue("all");
                   }}
                   suppressHydrationWarning
-                  /* UPDATED: Colorful glassmorphism for dropdown cells in dark mode */
-                  className="h-10 w-full rounded-2xl border border-slate-200 dark:border-fuchsia-500/40 bg-white/90 dark:bg-gradient-to-r dark:from-indigo-900/40 dark:via-purple-900/40 dark:to-fuchsia-900/40 pl-11 pr-4 text-xs text-slate-800 dark:text-fuchsia-50 dark:shadow-[inset_0_0_15px_rgba(192,38,211,0.2)] outline-none"
+                  className={getDarkSelectClasses("pl-11 pr-4")}
                 >
                   <option value="all">Filter by all columns</option>
                   {selectableColumns.map((column) => (
@@ -489,8 +760,7 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
                   onChange={(event) => setFilterValue(event.target.value)}
                   disabled={filterColumnId === "all"}
                   suppressHydrationWarning
-                  /* UPDATED: Colorful glassmorphism for dropdown cells in dark mode */
-                  className="h-10 w-full rounded-2xl border border-slate-200 dark:border-fuchsia-500/40 bg-white/90 dark:bg-gradient-to-r dark:from-indigo-900/40 dark:via-purple-900/40 dark:to-fuchsia-900/40 pl-11 pr-4 text-xs text-slate-800 dark:text-fuchsia-50 dark:shadow-[inset_0_0_15px_rgba(192,38,211,0.2)] outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                  className={getDarkSelectClasses("pl-11 pr-4 disabled:cursor-not-allowed disabled:opacity-60")}
                 >
                   <option value="all">All values</option>
                   {activeFilterOptions.map((option) => (
@@ -505,8 +775,7 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
                 <select
                   value={sortKey}
                   onChange={(event) => setSortKey(event.target.value)}
-                  /* UPDATED: Colorful glassmorphism for dropdown cells in dark mode */
-                  className="h-10 flex-1 rounded-2xl border border-slate-200 dark:border-fuchsia-500/40 bg-white/90 dark:bg-gradient-to-r dark:from-indigo-900/40 dark:via-purple-900/40 dark:to-fuchsia-900/40 px-4 text-xs text-slate-800 dark:text-fuchsia-50 dark:shadow-[inset_0_0_15px_rgba(192,38,211,0.2)] outline-none"
+                  className={getDarkSelectClasses("flex-1 px-4")}
                 >
                   <option value="none">No sorting</option>
                   <option value="slNo">SL. No</option>
@@ -545,8 +814,7 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
                   if (nextType !== "select") setNewColumnOptions("");
                 }}
                 suppressHydrationWarning
-                /* UPDATED: Colorful glassmorphism for dropdown cells in dark mode */
-                className="h-10 w-full rounded-2xl border border-slate-200 dark:border-fuchsia-500/40 bg-white/90 dark:bg-gradient-to-r dark:from-indigo-900/40 dark:via-purple-900/40 dark:to-fuchsia-900/40 px-3 text-xs text-slate-800 dark:text-fuchsia-50 dark:shadow-[inset_0_0_15px_rgba(192,38,211,0.2)] outline-none"
+                className={getDarkSelectClasses("px-3")}
               >
                 <option value="text">Text</option>
                 <option value="number">Number</option>
@@ -664,104 +932,26 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
                   const height = rowHeights[rowIndex] ?? 52;
 
                   return (
-                    <tr key={String(row.id)} className="group" style={{ height: `${height}px` }}>
-                      <td className="sticky left-0 z-10 border-b border-slate-200 dark:border-white/10 bg-white/95 dark:bg-zinc-900/95 px-3 py-2 text-sm text-slate-700 dark:text-zinc-200 shadow-sm">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-semibold">{displayIndex + 1}</span>
-                          <div className="flex items-center gap-1">
-                            <Button variant="ghost" size="icon" type="button" className="h-8 w-8 rounded-xl dark:hover:bg-white/10" onClick={() => moveRow(sheetKey, rowIndex, rowIndex - 1)} disabled={rowIndex === 0}>
-                              <ArrowUp className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="icon" type="button" className="h-8 w-8 rounded-xl dark:hover:bg-white/10" onClick={() => moveRow(sheetKey, rowIndex, rowIndex + 1)} disabled={rowIndex === sheet.rows.length - 1}>
-                              <ArrowDown className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                        <div
-                          className="absolute inset-x-0 bottom-0 h-6 cursor-row-resize"
-                          onMouseDown={(event) => {
-                            event.preventDefault(); setRowResizing({ rowIndex, startY: event.clientY, startHeight: height });
-                          }}
-                          onDoubleClick={() => setRowHeights((prev) => ({ ...prev, [rowIndex]: getAutoRowHeight(sheet, rowIndex) }))}
-                        >
-                          <div className="mx-auto h-1 w-12 rounded-full bg-slate-200/70 dark:bg-white/10 transition hover:bg-slate-400/90 dark:hover:bg-cyan-500/50" />
-                        </div>
-                      </td>
-                      {displayColumns.map((column) => {
-                        const value = row[column.id];
-                        const dynamicOptions = sheetKey === "leads" && column.id === "servicePitch" ? servicesSheet.rows.map((item) => String(item.serviceName ?? "")).filter(Boolean) : [];
-                        const options = Array.from(new Set([...getColumnOptions(sheetKey, column), ...dynamicOptions]));
-                        const shouldUseSelect = shouldRenderAsSelect(sheetKey, column);
-                        const draftKey = `${String(row.id)}:${column.id}`;
-                        const isCustomMode = shouldUseSelect && String(value ?? "") === "__custom__";
-
-                        return (
-                          <td
-                            key={column.id}
-                            className="border-b border-slate-200 dark:border-white/10 bg-gradient-to-b from-white/50 via-slate-50 to-fuchsia-50 dark:from-zinc-900/50 dark:via-zinc-800/50 dark:to-zinc-900/50 px-2 py-2 align-top group-hover:from-white/80 group-hover:to-fuchsia-50/60 dark:group-hover:from-zinc-800/80 dark:group-hover:via-zinc-800/80 dark:group-hover:to-zinc-800/80"
-                            style={{ width: `${columnWidths[column.id] ?? 180}px`, minWidth: `${columnWidths[column.id] ?? 180}px` }}
-                          >
-                            {shouldUseSelect ? (
-                              <div className="space-y-2">
-                                <select
-                                  value={String(value ?? "")}
-                                  onChange={(event) => updateCell(sheetKey, rowIndex, column.id, event.target.value)}
-                                  suppressHydrationWarning
-                                  className={getCellClasses({ ...column, type: "select" }, value)}
-                                >
-                                  <option value="">Select</option>
-                                  {options.map((option) => (
-                                    <option key={option} value={option}>{option}</option>
-                                  ))}
-                                  <option value="__custom__">Others - Add New</option>
-                                </select>
-                                {isCustomMode ? (
-                                  <div className="flex gap-2">
-                                    <Input
-                                      value={customOptionDrafts[draftKey] ?? ""}
-                                      onChange={(event) => setCustomDraft(String(row.id), column.id, event.target.value)}
-                                      placeholder={`Add new ${column.label}`}
-                                      className="h-10 rounded-xl dark:bg-zinc-900 dark:border-white/10 dark:text-zinc-100"
-                                      onKeyDown={(event) => {
-                                        if (event.key === "Enter") { event.preventDefault(); addCustomOption(String(row.id), rowIndex, column); }
-                                      }}
-                                    />
-                                    <Button type="button" size="sm" className="shrink-0 dark:bg-white dark:text-black dark:hover:bg-zinc-200" onClick={() => addCustomOption(String(row.id), rowIndex, column)}>Add</Button>
-                                  </div>
-                                ) : null}
-                              </div>
-                            ) : column.type === "textarea" ? (
-                              <textarea
-                                value={String(value ?? "")}
-                                onChange={(event) => updateCell(sheetKey, rowIndex, column.id, event.target.value)}
-                                suppressHydrationWarning
-                                className="min-h-[96px] w-full resize-none rounded-2xl border border-slate-200 dark:border-white/10 bg-white/90 dark:bg-zinc-900 px-3 py-3 text-sm text-slate-800 dark:text-zinc-100 outline-none shadow-[0_12px_30px_rgba(31,41,55,0.06)] dark:shadow-none focus-visible:ring-2 focus-visible:ring-fuchsia-400 dark:focus-visible:ring-cyan-500/50"
-                              />
-                            ) : (
-                              <div className={column.id === "completionPercent" ? "relative" : undefined}>
-                                <input
-                                  type={column.type === "number" ? "number" : column.type === "date" ? "date" : "text"}
-                                  value={String(value ?? "")}
-                                  onChange={(event) => updateCell(sheetKey, rowIndex, column.id, castValue(column.type, event.target.value))}
-                                  onWheel={(event) => { if (column.type === "number") event.currentTarget.blur(); }}
-                                  suppressHydrationWarning
-                                  className={`${getCellClasses(column, value)} ${column.id === "completionPercent" ? "pr-8" : ""}`}
-                                  {...(column.type === "number" ? getNumberInputBounds(sheetKey, row, column.id) : {})}
-                                />
-                                {column.id === "completionPercent" ? (
-                                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-slate-500 dark:text-zinc-400">%</span>
-                                ) : null}
-                              </div>
-                            )}
-                          </td>
-                        );
-                      })}
-                      <td className="sticky right-0 border-b border-slate-200 dark:border-white/10 bg-white/90 dark:bg-zinc-900/90 px-2 py-2 text-center align-top">
-                        <Button variant="ghost" size="icon" type="button" className="h-10 w-10 rounded-2xl dark:hover:bg-rose-500/10" onClick={() => deleteRow(sheetKey, rowIndex)} aria-label="Delete row">
-                          <Trash2 className="h-4 w-4 text-rose-500 dark:text-rose-400" />
-                        </Button>
-                      </td>
-                    </tr>
+                    <SheetRowView
+                      key={String(row.id)}
+                      row={row}
+                      rowIndex={rowIndex}
+                      displayIndex={displayIndex}
+                      height={height}
+                      displayColumns={displayColumns}
+                      sheetRowsLength={sheet.rows.length}
+                      sheetKey={sheetKey}
+                      servicesSheetRows={servicesSheet.rows}
+                      columnWidths={columnWidths}
+                      deleteRow={handleDeleteRow}
+                      moveRow={handleMoveRow}
+                      updateCell={handleUpdateCell}
+                      addColumnOption={handleAddColumnOption}
+                      customOptionDrafts={customOptionDrafts}
+                      setCustomDraft={setCustomDraft}
+                      rowResizeStart={handleRowResizeStart}
+                      autoRowHeight={handleAutoRowHeight}
+                    />
                   );
                 })}
               </tbody>

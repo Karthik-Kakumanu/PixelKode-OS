@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, ChevronDown, Command, LogOut, Menu, Mic, Moon, Plus, Search, Sun } from "lucide-react";
+import { Bell, CheckCircle2, ChevronDown, Command, LoaderCircle, LogOut, Menu, Mic, Moon, Plus, Search, Sun, WifiOff } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -25,14 +25,31 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
   const markAllAlertsRead = useBusinessStore((state) => state.markAllAlertsRead);
   const theme = useBusinessStore((state) => state.theme);
   const setTheme = useBusinessStore((state) => state.setTheme);
+  const isSaving = useBusinessStore((state) => state.isSaving);
+  const isLoaded = useBusinessStore((state) => state.isLoaded);
+  const error = useBusinessStore((state) => state.error);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [pageMenuOpen, setPageMenuOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
   const pageMenuRef = useRef<HTMLDivElement | null>(null);
   const notificationsRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setIsMounted(true);
+    if (typeof navigator !== "undefined") {
+      setIsOnline(navigator.onLine);
+    }
+  }, []);
+
+  useEffect(() => {
+    const syncOnlineStatus = () => setIsOnline(typeof navigator === "undefined" ? true : navigator.onLine);
+    window.addEventListener("online", syncOnlineStatus);
+    window.addEventListener("offline", syncOnlineStatus);
+    return () => {
+      window.removeEventListener("online", syncOnlineStatus);
+      window.removeEventListener("offline", syncOnlineStatus);
+    };
   }, []);
 
   useEffect(() => {
@@ -61,6 +78,40 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
     () => alerts.filter((alert) => !readAlertIds.includes(alert.id)),
     [alerts, readAlertIds]
   );
+
+  const syncState = useMemo(() => {
+    if (!isOnline || error.toLowerCase().includes("offline")) {
+      return {
+        label: "Offline pending sync",
+        tone: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200",
+        icon: WifiOff
+      };
+    }
+
+    if (isSaving) {
+      return {
+        label: "Saving...",
+        tone: "border-cyan-200 bg-cyan-50 text-cyan-700 dark:border-cyan-500/20 dark:bg-cyan-500/10 dark:text-cyan-200",
+        icon: LoaderCircle
+      };
+    }
+
+    if (isLoaded) {
+      return {
+        label: "Saved",
+        tone: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200",
+        icon: CheckCircle2
+      };
+    }
+
+    return {
+      label: "Syncing state",
+      tone: "border-slate-200 bg-white text-slate-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300",
+      icon: LoaderCircle
+    };
+  }, [error, isLoaded, isOnline, isSaving]);
+
+  const SyncIcon = syncState.icon;
 
   const openPalette = () => {
     window.dispatchEvent(
@@ -153,9 +204,9 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
             </span>
           </button>
 
-          <div className="hidden items-center gap-2 rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-700 xl:flex dark:text-cyan-300">
-            <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.7)]" />
-            Live status
+          <div className={`hidden items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-semibold xl:flex ${syncState.tone}`}>
+            <SyncIcon className={`h-3.5 w-3.5 ${syncState.label === "Saving..." ? "animate-spin" : ""}`} />
+            {syncState.label}
           </div>
         </div>
 

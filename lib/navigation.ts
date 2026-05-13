@@ -2,12 +2,16 @@ import type { ComponentType } from "react";
 import {
   Activity,
   CalendarRange,
+  ClipboardList,
   CircleDollarSign,
   Database,
   FileText,
+  KanbanSquare,
   LayoutDashboard,
   ListChecks,
+  Radar,
   Package,
+  ScrollText,
   Server,
   ShieldCheck,
   Users,
@@ -55,6 +59,34 @@ const appRoutes: AppRoute[] = [
     label: sheetTitles.revenue.title,
     description: sheetTitles.revenue.description,
     icon: CircleDollarSign,
+    group: "Business"
+  },
+  {
+    href: "/documents",
+    label: "Documents",
+    description: "Generate proposal, quotation, agreement, contract, invoice, onboarding, and project brief PDFs.",
+    icon: ScrollText,
+    group: "Business"
+  },
+  {
+    href: "/collections",
+    label: "Collections Center",
+    description: "Track pending payments, overdue cash, and reminder actions.",
+    icon: ClipboardList,
+    group: "Business"
+  },
+  {
+    href: "/operations-hub",
+    label: "Operations Hub",
+    description: "Live search, restore points, cash-flow forecasting, recurring reminders, and exports.",
+    icon: Radar,
+    group: "Business"
+  },
+  {
+    href: "/lead-pipeline",
+    label: "Lead Pipeline",
+    description: "Kanban view for fresh, follow-up, proposal, converted, and dropped leads.",
+    icon: KanbanSquare,
     group: "Business"
   },
   {

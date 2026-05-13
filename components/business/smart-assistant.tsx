@@ -1064,6 +1064,8 @@ export function SmartAssistant() {
   }, [voiceRepliesEnabled]);
 
   useEffect(() => {
+    if (!open) return;
+
     const loadAiStatus = async () => {
       try {
         const response = await fetch("/api/ai/status", { cache: "no-store" });
@@ -1080,7 +1082,7 @@ export function SmartAssistant() {
     };
 
     void loadAiStatus();
-  }, []);
+  }, [open]);
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -1391,7 +1393,7 @@ export function SmartAssistant() {
         return;
       }
       if (isQuestionLike) {
-        reply(`Gemini could not answer right now: ${aiResult.error}`);
+        reply(`AI could not answer right now: ${aiResult.error}`);
         return;
       }
     }

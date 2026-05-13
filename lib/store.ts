@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 
+import { createBackupSnapshot, maybeCreateAutoBackup, readBackups, type BackupSnapshot } from "@/lib/backup-manager";
 import { createDefaultSheets, normalizeTimetableSheet, timetableDayColumnIds } from "@/lib/data";
 import { formatLocalDateKey, getUpcomingSaturdayDateKey } from "@/lib/date";
 import { deriveOperationalAlerts } from "@/lib/operations";
@@ -11,12 +12,16 @@ interface BusinessStore {
   sheets: Record<SheetKey, SheetData>;
   alerts: OperationAlert[];
   readAlertIds: string[];
+  backups: BackupSnapshot[];
   theme: "light" | "dark";
   isLoaded: boolean;
   isSaving: boolean;
   error: string;
   loadSheets: () => Promise<void>;
   syncPendingChanges: () => Promise<void>;
+  refreshBackups: () => void;
+  createRestorePoint: (label?: string) => void;
+  restoreBackup: (backupId: string) => void;
   setTheme: (theme: "light" | "dark") => void;
   addRow: (sheet: SheetKey) => void;
   addRowWithValues: (sheet: SheetKey, values: Record<string, CellValue>, keepUnspecifiedEmpty?: boolean) => void;
@@ -441,13 +446,13 @@ function syncRevenueFromProjects(sheets: Record<SheetKey, SheetData>) {
   const manualRevenueRows = revenueSheet.rows.filter((row) =>
     ![PROJECT_REVENUE_SYNC_SOURCE, PROJECT_VALUE_SYNC_SOURCE, PROJECT_PENDING_SYNC_SOURCE].includes(String(row.syncSource ?? ""))
   );
-  const totalAmountReceived = projectsSheet.rows.reduce((sum, project) => sum + Number(project.amountReceived ?? 0), 0);
-  const rows = manualRevenueRows.map((row) => {
+  const rows = manualRevenueRows.filter((row) => {
     const sourceName = normalizeSyncText(row.sourceName);
     const category = normalizeSyncText(row.category);
     const remarks = normalizeSyncText(row.remarks);
     const entryType = normalizeSyncText(row.entryType);
-    const shouldSyncTotalRow =
+
+    return !(
       (entryType === "income" &&
         [
           "tilldate",
@@ -459,16 +464,8 @@ function syncRevenueFromProjects(sheets: Record<SheetKey, SheetData>) {
         ].includes(sourceName)) ||
       category === "projectreceipts" ||
       remarks.includes("projectsreceivedtilldate") ||
-      remarks.includes("totalreceived");
-
-    if (!shouldSyncTotalRow) {
-      return row;
-    }
-
-    return {
-      ...row,
-      amount: totalAmountReceived
-    };
+      remarks.includes("totalreceived")
+    );
   });
   const syncedRevenueRows = buildSyncedRevenueRows(projectsSheet);
 
@@ -539,7 +536,7 @@ function queuePersist(sheets: Record<SheetKey, SheetData>, set: (partial: Partia
     }
 
     void persistSheets(nextSheets, set);
-  }, 400);
+  }, 1000);
 }
 
 function buildOperationalState(sheets: Record<SheetKey, SheetData>, readAlertIds: string[]) {
@@ -621,6 +618,7 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
   sheets: createDefaultSheets(),
   alerts: deriveOperationalAlerts(createDefaultSheets()),
   readAlertIds: readStoredAlertIds(),
+  backups: readBackups(),
   theme: readStoredTheme(),
   isLoaded: false,
   isSaving: false,
@@ -637,11 +635,13 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       const rollover = applyTimetableRollover(mergedLocal);
       const syncedLocalSheets = syncRevenueFromProjects(rollover.sheets);
       const localState = buildOperationalState(syncedLocalSheets, get().readAlertIds);
+      const backups = maybeCreateAutoBackup(localState.sheets);
 
       set({
         sheets: localState.sheets,
         alerts: localState.alerts,
         readAlertIds: localState.readAlertIds,
+        backups,
         isLoaded: true,
         error: pendingSheets ? "Offline changes are waiting to sync." : ""
       });
@@ -683,11 +683,13 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       const rollover = applyTimetableRollover(mergedPayload);
       const syncedSheets = syncRevenueFromProjects(rollover.sheets);
       const nextState = buildOperationalState(syncedSheets, get().readAlertIds);
+      const backups = maybeCreateAutoBackup(nextState.sheets);
 
       set({
         sheets: nextState.sheets,
         alerts: nextState.alerts,
         readAlertIds: nextState.readAlertIds,
+        backups,
         isLoaded: true,
         error: ""
       });
@@ -728,6 +730,35 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
 
     await persistSheets(syncRevenueFromProjects(pendingSheets), set);
   },
+  refreshBackups: () => {
+    set({ backups: readBackups() });
+  },
+  createRestorePoint: (label) => {
+    const backups = createBackupSnapshot(get().sheets, label?.trim() || "Manual restore point", "manual");
+    set({ backups });
+  },
+  restoreBackup: (backupId) => {
+    const current = get();
+    const target = current.backups.find((backup) => backup.id === backupId);
+    if (!target) {
+      set({ error: "That restore point is no longer available." });
+      return;
+    }
+
+    const backups = createBackupSnapshot(current.sheets, "Before restore", "manual");
+    const restoredSheets = syncRevenueFromProjects(ensureAllSheetsPresent(target.sheets));
+    const nextState = buildOperationalState(restoredSheets, current.readAlertIds);
+
+    set({
+      ...nextState,
+      backups,
+      error: ""
+    });
+    writeStoredSheets(LOCAL_CACHE_KEY, nextState.sheets);
+    writeStoredSheets(LOCAL_PENDING_KEY, nextState.sheets);
+    writeStoredAlertIds(nextState.readAlertIds);
+    queuePersist(nextState.sheets, set);
+  },
   addRow: (sheet) => {
     const current = get().sheets[sheet];
     const nextSheets = {
@@ -739,8 +770,9 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     };
     const sheets = syncRevenueFromProjects(nextSheets);
     const nextState = buildOperationalState(sheets, get().readAlertIds);
+    const backups = maybeCreateAutoBackup(sheets);
 
-    set(nextState);
+    set({ ...nextState, backups });
     queuePersist(sheets, set);
   },
   addRowWithValues: (sheet, values, keepUnspecifiedEmpty = false) => {
@@ -760,8 +792,9 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     };
     const sheets = syncRevenueFromProjects(nextSheets);
     const nextState = buildOperationalState(sheets, get().readAlertIds);
+    const backups = maybeCreateAutoBackup(sheets);
 
-    set(nextState);
+    set({ ...nextState, backups });
     queuePersist(sheets, set);
   },
   deleteRow: (sheet, rowIndex) => {
@@ -776,8 +809,9 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     };
     const sheets = syncRevenueFromProjects(nextSheets);
     const nextState = buildOperationalState(sheets, get().readAlertIds);
+    const backups = maybeCreateAutoBackup(sheets);
 
-    set(nextState);
+    set({ ...nextState, backups });
     queuePersist(sheets, set);
   },
   updateCell: (sheet, rowIndex, columnId, value) => {
@@ -792,8 +826,9 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     };
     const sheets = syncRevenueFromProjects(nextSheets);
     const nextState = buildOperationalState(sheets, get().readAlertIds);
+    const backups = maybeCreateAutoBackup(sheets);
 
-    set(nextState);
+    set({ ...nextState, backups });
     queuePersist(sheets, set);
   },
   moveRow: (sheet, fromIndex, toIndex) => {
@@ -815,8 +850,9 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     };
     const sheets = syncRevenueFromProjects(nextSheets);
     const nextState = buildOperationalState(sheets, get().readAlertIds);
+    const backups = maybeCreateAutoBackup(sheets);
 
-    set(nextState);
+    set({ ...nextState, backups });
     queuePersist(sheets, set);
   },
   addColumn: (sheet, column) => {
@@ -834,8 +870,9 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     };
     const sheets = syncRevenueFromProjects(nextSheets);
     const nextState = buildOperationalState(sheets, get().readAlertIds);
+    const backups = maybeCreateAutoBackup(sheets);
 
-    set(nextState);
+    set({ ...nextState, backups });
     queuePersist(sheets, set);
   },
   deleteColumn: (sheet, columnId) => {
@@ -861,8 +898,9 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     };
     const sheets = syncRevenueFromProjects(nextSheets);
     const nextState = buildOperationalState(sheets, get().readAlertIds);
+    const backups = maybeCreateAutoBackup(sheets);
 
-    set(nextState);
+    set({ ...nextState, backups });
     queuePersist(sheets, set);
   },
   moveColumn: (sheet, columnId, direction) => {
@@ -891,8 +929,9 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     };
     const sheets = syncRevenueFromProjects(nextSheets);
     const nextState = buildOperationalState(sheets, get().readAlertIds);
+    const backups = maybeCreateAutoBackup(sheets);
 
-    set(nextState);
+    set({ ...nextState, backups });
     queuePersist(sheets, set);
   },
   updateColumnWidth: (sheet, columnId, width) => {
@@ -911,8 +950,9 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     };
     const sheets = syncRevenueFromProjects(nextSheets);
     const nextState = buildOperationalState(sheets, get().readAlertIds);
+    const backups = maybeCreateAutoBackup(sheets);
 
-    set(nextState);
+    set({ ...nextState, backups });
     queuePersist(sheets, set);
   },
   addColumnOption: (sheet, columnId, option) => {
@@ -952,8 +992,9 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     };
     const sheets = syncRevenueFromProjects(nextSheets);
     const nextState = buildOperationalState(sheets, get().readAlertIds);
+    const backups = maybeCreateAutoBackup(sheets);
 
-    set(nextState);
+    set({ ...nextState, backups });
     queuePersist(sheets, set);
   },
   setTheme: (theme) => {

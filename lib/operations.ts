@@ -57,7 +57,7 @@ function addProjectAlerts(alerts: OperationAlert[], rows: SheetRow[], today: Dat
           id: makeAlertId("projects", rowId, "due-soon"),
           title: `${projectName} is due soon`,
           message: `${clientName} delivery is due in ${days} day${days === 1 ? "" : "s"}.`,
-          severity: "medium",
+          severity: days <= 2 ? "high" : "medium",
           sheet: "projects",
           rowId,
           dueDate: toText(row.deliveryDate),
@@ -128,6 +128,17 @@ function addLeadAlerts(alerts: OperationAlert[], rows: SheetRow[], today: Date) 
         rowId,
         dueDate: toText(row.followUpDate),
         actionLabel: "Call lead"
+      });
+    } else if (days === 1) {
+      pushAlert(alerts, {
+        id: makeAlertId("leads", rowId, "follow-up-tomorrow"),
+        title: `${businessName} needs follow-up tomorrow`,
+        message: "Reminder early enough to prepare outreach before it becomes urgent.",
+        severity: "low",
+        sheet: "leads",
+        rowId,
+        dueDate: toText(row.followUpDate),
+        actionLabel: "Prep follow-up"
       });
     } else if (days <= 2) {
       pushAlert(alerts, {
