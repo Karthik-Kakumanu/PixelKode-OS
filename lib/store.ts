@@ -51,6 +51,7 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let queuedSheets: Record<SheetKey, SheetData> | null = null;
 let activeSaveRequest = 0;
 let persistInFlight = false;
+let hasQueuedLocalChanges = false;
 let remoteRefreshInFlight: Promise<void> | null = null;
 let realtimeSyncInterval: ReturnType<typeof setInterval> | null = null;
 let storageSyncInitialized = false;
@@ -624,6 +625,7 @@ async function persistSheets(
     const payload = (await response.json()) as BusinessStatePayload;
     writeStoredSheets(LOCAL_CACHE_KEY, sheets);
     clearStoredSheets(LOCAL_PENDING_KEY);
+    hasQueuedLocalChanges = false;
     set({
       serverVersion: typeof payload.version === "number" ? payload.version : get().serverVersion,
       lastSyncedAt: payload.updatedAt ?? new Date().toISOString(),
@@ -691,6 +693,7 @@ function queuePersist(
   get: () => BusinessStore
 ) {
   queuedSheets = sheets;
+  hasQueuedLocalChanges = true;
   set({ isSaving: true, error: "" });
   schedulePersist(set, get);
 }
@@ -937,15 +940,13 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     }
 
     try {
-      if (pendingSheets) {
-        await persistSheets(syncRevenueFromProjects(ensureAllSheetsPresent(pendingSheets)), set, get);
-      }
-
       const payload = await fetchServerState();
+      clearStoredSheets(LOCAL_PENDING_KEY);
+      hasQueuedLocalChanges = false;
       applySheetsSnapshot(set, get().readAlertIds, payload.sheets ?? createDefaultSheets(), {
         version: typeof payload.version === "number" ? payload.version : null,
         updatedAt: payload.updatedAt ?? null,
-        error: ""
+        error: pendingSheets ? "Loaded the latest shared workspace from the server." : ""
       });
       scheduleAlertRefresh(get, set);
       ensureRealtimeSync(get);
@@ -987,7 +988,7 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       return;
     }
 
-    if (readStoredSheets(LOCAL_PENDING_KEY) && !options?.force) {
+    if ((persistInFlight || hasQueuedLocalChanges) && !options?.force) {
       return;
     }
 
