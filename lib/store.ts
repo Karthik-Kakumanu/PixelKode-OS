@@ -713,21 +713,17 @@ function ensureAllSheetsPresent(sheets: Record<SheetKey, SheetData> | null | und
   const defaults = createDefaultSheets();
   if (!sheets) return defaults;
 
-  // Fill missing keys from defaults but keep existing user data.
+  // Fill missing sheet keys from defaults, but do not re-add deleted columns.
   const merged: Record<SheetKey, SheetData> = { ...defaults } as Record<SheetKey, SheetData>;
 
   Object.keys(sheets).forEach((k) => {
     const sheetKey = k as SheetKey;
     const nextSheet = sheets[sheetKey];
     const defaultSheet = defaults[sheetKey];
-    const mergedColumns = defaultSheet.columns.map((defaultColumn) => {
-      const existingColumn = nextSheet.columns.find((column) => column.id === defaultColumn.id);
-      return existingColumn ? { ...defaultColumn, ...existingColumn } : defaultColumn;
+    const columns = nextSheet.columns.map((column) => {
+      const defaultColumn = defaultSheet.columns.find((candidate) => candidate.id === column.id);
+      return defaultColumn ? { ...defaultColumn, ...column } : column;
     });
-    const extraColumns = nextSheet.columns.filter(
-      (column) => !defaultSheet.columns.some((defaultColumn) => defaultColumn.id === column.id)
-    );
-    const columns = [...mergedColumns, ...extraColumns];
     const rowsWithMissingFields = ensureUniqueRowIds(nextSheet.rows, rowIdPrefixes[sheetKey]).map((row) => {
       const nextRow = { ...row };
       columns.forEach((column) => {
@@ -739,7 +735,6 @@ function ensureAllSheetsPresent(sheets: Record<SheetKey, SheetData> | null | und
     });
 
     merged[sheetKey] = {
-      ...defaultSheet,
       ...nextSheet,
       columns,
       rows: rowsWithMissingFields
