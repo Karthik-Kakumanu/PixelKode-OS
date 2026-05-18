@@ -29,6 +29,8 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
   const isSaving = useBusinessStore((state) => state.isSaving);
   const isLoaded = useBusinessStore((state) => state.isLoaded);
   const error = useBusinessStore((state) => state.error);
+  const serverVersion = useBusinessStore((state) => state.serverVersion);
+  const lastSyncedAt = useBusinessStore((state) => state.lastSyncedAt);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [pageMenuOpen, setPageMenuOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
@@ -103,11 +105,19 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
       };
     }
 
-    if (isLoaded) {
+    if (isLoaded && serverVersion !== null && lastSyncedAt) {
       return {
-        label: "Saved",
+        label: "Synced",
         tone: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200",
         icon: CheckCircle2
+      };
+    }
+
+    if (isLoaded) {
+      return {
+        label: "Local only",
+        tone: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200",
+        icon: WifiOff
       };
     }
 
@@ -115,8 +125,8 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
       label: "Syncing state",
       tone: "border-slate-200 bg-white text-slate-600 dark:border-white/10 dark:bg-slate-950/76 dark:text-zinc-300",
       icon: LoaderCircle
-    };
-  }, [error, isLoaded, isOnline, isSaving]);
+      };
+  }, [error, isLoaded, isOnline, isSaving, lastSyncedAt, serverVersion]);
 
   const SyncIcon = syncState.icon;
 
