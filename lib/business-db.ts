@@ -4,6 +4,7 @@ import type { CellValue, ColumnType, SheetColumn, SheetData, SheetKey, SheetRow 
 
 const DEFAULT_STATE_ID = "pixelkode-main";
 const META_TABLE = "business_sheet_meta";
+const SNAPSHOT_TABLE = "business_state_snapshot";
 const SHEET_KEYS: SheetKey[] = [
   "projects",
   "leads",
@@ -333,6 +334,18 @@ async function ensureMetaTable(queryable: Queryable) {
   `);
 }
 
+async function ensureSnapshotTable(queryable: Queryable) {
+  await queryable.query(`
+    create table if not exists ${SNAPSHOT_TABLE} (
+      id text primary key,
+      sheets jsonb not null,
+      version bigint not null default 1,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    )
+  `);
+}
+
 async function ensureSectorTables(queryable: Queryable, sheetKey: SheetKey) {
   const storage = SHEET_STORAGE[sheetKey];
 
@@ -379,11 +392,72 @@ async function ensureSectorTables(queryable: Queryable, sheetKey: SheetKey) {
 }
 
 async function ensureAllTables(queryable: Queryable) {
+  await ensureSnapshotTable(queryable);
   await ensureMetaTable(queryable);
 
   for (const sheetKey of SHEET_KEYS) {
     await ensureSectorTables(queryable, sheetKey);
   }
+}
+
+async function readSnapshotState(queryable: Queryable) {
+  await ensureSnapshotTable(queryable);
+
+  const existing = await queryable.query(
+    `select sheets, version, updated_at from ${SNAPSHOT_TABLE} where id = $1 limit 1`,
+    [DEFAULT_STATE_ID]
+  );
+
+  if (!existing.rowCount || !existing.rows[0]?.sheets) {
+    return null;
+  }
+
+  return {
+    sheets: normalizeSheets(existing.rows[0].sheets),
+    version: Number(existing.rows[0].version ?? 1),
+    updatedAt: existing.rows[0].updated_at instanceof Date ? existing.rows[0].updated_at.toISOString() : null
+  } satisfies BusinessStateRecord;
+}
+
+async function writeSnapshotState(
+  queryable: Queryable,
+  sheets: BusinessSheets,
+  options?: { setVersion?: number }
+) {
+  await ensureSnapshotTable(queryable);
+
+  const result =
+    typeof options?.setVersion === "number"
+      ? await queryable.query(
+          `
+            insert into ${SNAPSHOT_TABLE} (id, sheets, version, updated_at)
+            values ($1, $2::jsonb, $3, now())
+            on conflict (id) do update
+            set sheets = excluded.sheets,
+                version = excluded.version,
+                updated_at = now()
+            returning version, updated_at
+          `,
+          [DEFAULT_STATE_ID, JSON.stringify(sheets), options.setVersion]
+        )
+      : await queryable.query(
+          `
+            insert into ${SNAPSHOT_TABLE} (id, sheets, version, updated_at)
+            values ($1, $2::jsonb, 1, now())
+            on conflict (id) do update
+            set sheets = excluded.sheets,
+                version = ${SNAPSHOT_TABLE}.version + 1,
+                updated_at = now()
+            returning version, updated_at
+          `,
+          [DEFAULT_STATE_ID, JSON.stringify(sheets)]
+        );
+
+  return {
+    sheets,
+    version: Number(result.rows[0]?.version ?? options?.setVersion ?? 1),
+    updatedAt: result.rows[0]?.updated_at instanceof Date ? result.rows[0].updated_at.toISOString() : new Date().toISOString()
+  } satisfies BusinessStateRecord;
 }
 
 async function readLegacyBusinessState(queryable: Queryable) {
@@ -639,6 +713,42 @@ async function archiveLegacyJsonTablesIfPresent(queryable: Queryable) {
   }
 }
 
+async function readAllSheetsFromNormalizedTables(queryable: Queryable) {
+  await migrateLegacyBusinessStateIfNeeded(queryable);
+  await archiveLegacyJsonTablesIfPresent(queryable);
+
+  const defaults = createDefaultSheets();
+  const sheets = createDefaultSheets();
+  let version = 0;
+  let updatedAt: string | null = null;
+
+  for (const sheetKey of SHEET_KEYS) {
+    sheets[sheetKey] = await readSheetSnapshot(queryable, sheetKey, defaults[sheetKey]);
+  }
+
+  const meta = await queryable.query(
+    `
+      select sheet_key, version, updated_at
+      from ${META_TABLE}
+      where sheet_key = any($1::text[])
+    `,
+    [SHEET_KEYS]
+  );
+
+  meta.rows.forEach((row) => {
+    version += Number(row.version ?? 1);
+    updatedAt = maxIsoDate(updatedAt, row.updated_at instanceof Date ? row.updated_at.toISOString() : null);
+  });
+
+  sheets.timetable = normalizeTimetableSheet(sheets.timetable);
+
+  return {
+    sheets,
+    version,
+    updatedAt
+  } satisfies BusinessStateRecord;
+}
+
 async function readAllSheetsFromTables() {
   if (!db) {
     global.__pixelkodeFallbackSheets ??= createDefaultSheets();
@@ -652,39 +762,16 @@ async function readAllSheetsFromTables() {
   const client = await db.connect();
 
   try {
-    await migrateLegacyBusinessStateIfNeeded(client);
-    await archiveLegacyJsonTablesIfPresent(client);
-
-    const defaults = createDefaultSheets();
-    const sheets = createDefaultSheets();
-    let version = 0;
-    let updatedAt: string | null = null;
-
-    for (const sheetKey of SHEET_KEYS) {
-      sheets[sheetKey] = await readSheetSnapshot(client, sheetKey, defaults[sheetKey]);
+    const snapshotState = await readSnapshotState(client);
+    if (snapshotState) {
+      return snapshotState;
     }
 
-    const meta = await client.query(
-      `
-        select sheet_key, version, updated_at
-        from ${META_TABLE}
-        where sheet_key = any($1::text[])
-      `,
-      [SHEET_KEYS]
-    );
-
-    meta.rows.forEach((row) => {
-      version += Number(row.version ?? 1);
-      updatedAt = maxIsoDate(updatedAt, row.updated_at instanceof Date ? row.updated_at.toISOString() : null);
+    const normalizedState = await readAllSheetsFromNormalizedTables(client);
+    await writeSnapshotState(client, normalizedState.sheets, {
+      setVersion: normalizedState.version > 0 ? normalizedState.version : 1
     });
-
-    sheets.timetable = normalizeTimetableSheet(sheets.timetable);
-
-    return {
-      sheets,
-      version,
-      updatedAt
-    } satisfies BusinessStateRecord;
+    return normalizedState;
   } finally {
     client.release();
   }
@@ -721,28 +808,8 @@ export async function saveBusinessState(sheets: unknown) {
   const client = await db.connect();
 
   try {
-    await client.query("begin");
-    await migrateLegacyBusinessStateIfNeeded(client);
-    await archiveLegacyJsonTablesIfPresent(client);
-
-    let version = 0;
-    let updatedAt: string | null = null;
-
-    for (const sheetKey of SHEET_KEYS) {
-      const meta = await writeSheetSnapshot(client, sheetKey, normalized[sheetKey]);
-      version += meta.version;
-      updatedAt = maxIsoDate(updatedAt, meta.updatedAt);
-    }
-
-    await client.query("commit");
-
-    return {
-      sheets: normalized,
-      version,
-      updatedAt
-    } satisfies BusinessStateRecord;
+    return await writeSnapshotState(client, normalized);
   } catch (error) {
-    await client.query("rollback");
     throw error;
   } finally {
     client.release();

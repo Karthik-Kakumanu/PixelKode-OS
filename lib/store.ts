@@ -50,6 +50,7 @@ interface BusinessStore {
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let queuedSheets: Record<SheetKey, SheetData> | null = null;
 let activeSaveRequest = 0;
+let persistInFlight = false;
 let remoteRefreshInFlight: Promise<void> | null = null;
 let realtimeSyncInterval: ReturnType<typeof setInterval> | null = null;
 let storageSyncInitialized = false;
@@ -62,8 +63,9 @@ const LOCAL_PENDING_KEY = "pixelkode_os_pending_sheets";
 const LOCAL_READ_ALERTS_KEY = "pixelkode_os_read_alert_ids";
 const LOCAL_THEME_KEY = "pixelkode_os_theme";
 const LOCAL_TIMETABLE_ROLLOVER_KEY = "pixelkode_os_timetable_rollover_date";
-const REMOTE_SYNC_INTERVAL_MS = 5000;
-const LOCAL_SAVE_DEBOUNCE_MS = 350;
+const REMOTE_SYNC_INTERVAL_MS = 2500;
+const LOCAL_SAVE_DEBOUNCE_MS = 180;
+const API_REQUEST_TIMEOUT_MS = 15000;
 const rowIdPrefixes: Record<SheetKey, string> = {
   projects: "project",
   leads: "lead",
@@ -84,6 +86,20 @@ type BusinessStatePayload = {
   version?: number;
   updatedAt?: string | null;
 };
+
+async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, timeoutMs = API_REQUEST_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal
+    });
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
 
 function canUseStorage() {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
@@ -572,7 +588,7 @@ function syncRevenueFromProjects(sheets: Record<SheetKey, SheetData>) {
 }
 
 async function fetchServerState() {
-  const response = await fetch("/api/business-state", {
+  const response = await fetchWithTimeout("/api/business-state", {
     cache: "no-store"
   });
 
@@ -588,11 +604,12 @@ async function persistSheets(
   set: (partial: Partial<BusinessStore>) => void,
   get: () => BusinessStore
 ) {
+  persistInFlight = true;
   const requestId = ++activeSaveRequest;
   set({ isSaving: true, error: "" });
 
   try {
-    const response = await fetch("/api/business-state", {
+    const response = await fetchWithTimeout("/api/business-state", {
       method: "PUT",
       headers: {
         "Content-Type": "application/json"
@@ -618,28 +635,38 @@ async function persistSheets(
     writeStoredSheets(LOCAL_PENDING_KEY, sheets);
     set({ error: "Offline mode active. Changes are saved on this device and will sync automatically." });
   } finally {
+    persistInFlight = false;
+
+    if (queuedSheets) {
+      schedulePersist(set, get, 0);
+      return;
+    }
+
     if (requestId === activeSaveRequest) {
       set({ isSaving: false });
     }
   }
 }
 
-function queuePersist(
-  sheets: Record<SheetKey, SheetData>,
+function schedulePersist(
   set: (partial: Partial<BusinessStore>) => void,
-  get: () => BusinessStore
+  get: () => BusinessStore,
+  delay = LOCAL_SAVE_DEBOUNCE_MS
 ) {
-  queuedSheets = sheets;
-  set({ isSaving: true, error: "" });
-
   if (saveTimer) {
     clearTimeout(saveTimer);
   }
 
   saveTimer = setTimeout(() => {
+    saveTimer = null;
+
+    if (persistInFlight) {
+      schedulePersist(set, get);
+      return;
+    }
+
     const nextSheets = queuedSheets;
     queuedSheets = null;
-    saveTimer = null;
 
     if (!nextSheets) {
       set({ isSaving: false });
@@ -655,7 +682,17 @@ function queuePersist(
     }
 
     void persistSheets(nextSheets, set, get);
-  }, LOCAL_SAVE_DEBOUNCE_MS);
+  }, delay);
+}
+
+function queuePersist(
+  sheets: Record<SheetKey, SheetData>,
+  set: (partial: Partial<BusinessStore>) => void,
+  get: () => BusinessStore
+) {
+  queuedSheets = sheets;
+  set({ isSaving: true, error: "" });
+  schedulePersist(set, get);
 }
 
 function buildOperationalState(sheets: Record<SheetKey, SheetData>, readAlertIds: string[]) {

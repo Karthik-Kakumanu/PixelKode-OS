@@ -1,3 +1,11 @@
+create table if not exists business_state_snapshot (
+  id text primary key,
+  sheets jsonb not null,
+  version bigint not null default 1,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists business_sheet_meta (
   sheet_key text primary key,
   version bigint not null default 1,
@@ -69,5 +77,5 @@ begin
   end loop;
 end $$;
 
--- Runtime migration still reads legacy `business_state` if it exists,
--- then moves the old data into these normalized sector tables.
+-- Runtime now prefers `business_state_snapshot` for fast shared saves.
+-- If that snapshot is empty, it backfills from the normalized sector tables.
