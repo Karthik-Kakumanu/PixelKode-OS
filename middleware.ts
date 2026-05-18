@@ -5,6 +5,11 @@ const publicRoutes = ["/login"];
 
 export default function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  if (pathname.startsWith("/api/")) {
+    return NextResponse.next();
+  }
+
   const isPublicRoute = publicRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
   const hasSession = request.cookies.get("pixelkode_session")?.value === "active";
 

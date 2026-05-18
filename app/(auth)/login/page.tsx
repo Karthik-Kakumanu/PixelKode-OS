@@ -1,18 +1,47 @@
 "use client";
 
-import { useActionState } from "react";
+import { useState, useTransition } from "react";
 import { Cpu, ShieldCheck, Sparkles } from "lucide-react";
+import { useRouter } from "next/navigation";
 
-import { loginAction } from "@/app/(auth)/login/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-const initialState = {
-  error: ""
-};
-
 export default function LoginPage() {
-  const [state, formAction, isPending] = useActionState(loginAction, initialState);
+  const router = useRouter();
+  const [error, setError] = useState("");
+  const [isPending, startTransition] = useTransition();
+
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+
+    startTransition(async () => {
+      setError("");
+
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          username: String(formData.get("username") ?? ""),
+          password: String(formData.get("password") ?? "")
+        })
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+
+      if (!response.ok) {
+        setError(payload.error ?? "Unable to login right now.");
+        return;
+      }
+
+      router.replace("/dashboard");
+      router.refresh();
+    });
+  }
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center p-4 transition-colors duration-700 relative overflow-hidden bg-[#f8fafc] dark:bg-black">
@@ -46,7 +75,7 @@ export default function LoginPage() {
           </div>
 
           <div className="mt-8">
-            <form action={formAction} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-3">
                 <Input 
                   placeholder="Username" 
@@ -65,9 +94,9 @@ export default function LoginPage() {
                 />
               </div>
 
-              {state?.error ? (
+              {error ? (
                 <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-center text-sm font-medium text-rose-600 dark:text-rose-400">
-                  {state.error}
+                  {error}
                 </div>
               ) : null}
 

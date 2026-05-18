@@ -17,8 +17,8 @@ export async function GET() {
       return unauthorizedResponse();
     }
 
-    const sheets = await getBusinessState();
-    return NextResponse.json({ sheets }, { headers: { "Cache-Control": "no-store" } });
+    const state = await getBusinessState();
+    return NextResponse.json(state, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Failed to load business state", error);
     return NextResponse.json({ error: "Failed to load business state." }, { status: 500 });
@@ -37,8 +37,8 @@ export async function PUT(request: Request) {
 
     const body = await request.json();
     validateSheetPayload(body);
-    const sheets = await saveBusinessState(body?.sheets);
-    return NextResponse.json({ sheets }, { headers: { "Cache-Control": "no-store" } });
+    const state = await saveBusinessState(body?.sheets);
+    return NextResponse.json(state, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Failed to save business state", error);
     return NextResponse.json({ error: "Failed to save business state." }, { status: 500 });

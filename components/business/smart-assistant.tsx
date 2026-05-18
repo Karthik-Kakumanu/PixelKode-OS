@@ -196,6 +196,11 @@ type ChatMessage = {
   content: string;
 };
 
+type VoiceOption = {
+  name: string;
+  label: string;
+};
+
 type SpeechRecognitionLike = {
   start: () => void;
   stop: () => void;
@@ -212,6 +217,91 @@ declare global {
   interface Window {
     SpeechRecognition?: new () => SpeechRecognitionLike;
     webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+  }
+}
+
+const VOICE_ENABLED_STORAGE_KEY = "pixelkode_voice_replies_enabled";
+const VOICE_NAME_STORAGE_KEY = "pixelkode_voice_name";
+const VOICE_RATE_STORAGE_KEY = "pixelkode_voice_rate";
+const EXTERNAL_VOICE_OPTIONS: VoiceOption[] = [
+  { name: "cedar", label: "Cedar - Warm" },
+  { name: "marin", label: "Marin - Natural" },
+  { name: "coral", label: "Coral - Cheerful" },
+  { name: "sage", label: "Sage - Calm" },
+  { name: "alloy", label: "Alloy - Neutral" },
+  { name: "nova", label: "Nova - Bright" }
+];
+
+function readStoredVoiceEnabled() {
+  if (typeof window === "undefined") return true;
+
+  try {
+    const raw = window.localStorage.getItem(VOICE_ENABLED_STORAGE_KEY);
+    return raw === null ? true : raw === "true";
+  } catch {
+    return true;
+  }
+}
+
+function readStoredVoiceName() {
+  if (typeof window === "undefined") return "";
+
+  try {
+    return window.localStorage.getItem(VOICE_NAME_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function stripMarkdownForSpeech(text: string) {
+  return text
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/#{1,6}\s*/g, "")
+    .replace(/^\s*[-*]\s+/gm, "")
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildSpokenSummary(text: string) {
+  const cleaned = stripMarkdownForSpeech(text);
+  if (!cleaned) return "";
+
+  const sentences = cleaned
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+
+  const summaryParts: string[] = [];
+  let length = 0;
+
+  for (const sentence of sentences) {
+    if (length + sentence.length > 180 && summaryParts.length > 0) {
+      break;
+    }
+
+    summaryParts.push(sentence);
+    length += sentence.length + 1;
+
+    if (summaryParts.length >= 2 || length >= 140) {
+      break;
+    }
+  }
+
+  return (summaryParts.join(" ") || cleaned.slice(0, 180)).trim();
+}
+
+function readStoredVoiceRate() {
+  if (typeof window === "undefined") return 1.18;
+
+  try {
+    const raw = Number(window.localStorage.getItem(VOICE_RATE_STORAGE_KEY) ?? "1.18");
+    return Number.isFinite(raw) ? Math.min(Math.max(raw, 0.8), 1.6) : 1.18;
+  } catch {
+    return 1.18;
   }
 }
 
@@ -1052,19 +1142,68 @@ export function SmartAssistant() {
   ]);
   const [isListening, setIsListening] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState("");
-  const [voiceRepliesEnabled, setVoiceRepliesEnabled] = useState(true);
+  const [voiceRepliesEnabled, setVoiceRepliesEnabled] = useState(readStoredVoiceEnabled);
+  const [availableVoices] = useState<VoiceOption[]>(EXTERNAL_VOICE_OPTIONS);
+  const [selectedVoiceName, setSelectedVoiceName] = useState(readStoredVoiceName() || EXTERNAL_VOICE_OPTIONS[0]?.name || "cedar");
+  const [voiceRate, setVoiceRate] = useState(readStoredVoiceRate);
   const [aiStatus, setAiStatus] = useState<{ configured: boolean; provider: string; model: string } | null>(null);
+  const [voiceMode, setVoiceMode] = useState<"external" | "browser">("external");
 
   useEffect(() => {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       if (!voiceRepliesEnabled) {
         window.speechSynthesis.cancel();
       }
+      if (!voiceRepliesEnabled && currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        currentAudioRef.current = null;
+      }
+      if (!voiceRepliesEnabled && currentAudioUrlRef.current) {
+        URL.revokeObjectURL(currentAudioUrlRef.current);
+        currentAudioUrlRef.current = null;
+      }
     }
   }, [voiceRepliesEnabled]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      window.localStorage.setItem(VOICE_ENABLED_STORAGE_KEY, String(voiceRepliesEnabled));
+    } catch {
+      // Ignore storage write failures for non-critical preferences.
+    }
+  }, [voiceRepliesEnabled]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      window.localStorage.setItem(VOICE_NAME_STORAGE_KEY, selectedVoiceName);
+    } catch {
+      // Ignore storage write failures for non-critical preferences.
+    }
+  }, [selectedVoiceName]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      window.localStorage.setItem(VOICE_RATE_STORAGE_KEY, String(voiceRate));
+    } catch {
+      // Ignore storage write failures for non-critical preferences.
+    }
+  }, [voiceRate]);
+
+  useEffect(() => {
+    if (voiceRepliesEnabled) {
+      setVoiceMode("external");
+    }
+  }, [selectedVoiceName, voiceRate, voiceRepliesEnabled]);
+
+  useEffect(() => {
     if (!open) return;
+    if (aiStatusLoadedRef.current) return;
 
     const loadAiStatus = async () => {
       try {
@@ -1078,6 +1217,8 @@ export function SmartAssistant() {
         });
       } catch {
         setAiStatus(null);
+      } finally {
+        aiStatusLoadedRef.current = true;
       }
     };
 
@@ -1095,6 +1236,9 @@ export function SmartAssistant() {
   const isSubmittingVoiceRef = useRef(false);
   const suppressVoiceOnEndSubmitRef = useRef(false);
   const lastSubmittedPromptRef = useRef<{ text: string; time: number } | null>(null);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const currentAudioUrlRef = useRef<string | null>(null);
+  const aiStatusLoadedRef = useRef(false);
 
   const currentSheetKey = activeSheetKey ?? inferSheetKey(pathname) ?? "projects";
   const currentSheet = sheets[currentSheetKey];
@@ -1108,19 +1252,98 @@ export function SmartAssistant() {
     setMessages((current) => [...current, buildMessage(role, content)]);
   }
 
-  function speak(text: string) {
+  function stopCurrentSpeech() {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current = null;
+    }
+
+    if (currentAudioUrlRef.current) {
+      URL.revokeObjectURL(currentAudioUrlRef.current);
+      currentAudioUrlRef.current = null;
+    }
+  }
+
+  function speakWithBrowser(text: string) {
     if (!voiceRepliesEnabled || typeof window === "undefined" || !("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "en-IN";
-    utterance.rate = 1;
+    utterance.rate = voiceRate;
     utterance.pitch = 1;
     window.speechSynthesis.speak(utterance);
   }
 
+  async function speakWithExternal(text: string) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2200);
+    let response: Response;
+
+    try {
+      response = await fetch("/api/ai/speech", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          text,
+          voice: selectedVoiceName,
+          rate: voiceRate
+        })
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(payload.error ?? `Speech failed (${response.status})`);
+    }
+
+    const audioBlob = await response.blob();
+    const audioUrl = URL.createObjectURL(audioBlob);
+    const audio = new Audio(audioUrl);
+    currentAudioRef.current = audio;
+    currentAudioUrlRef.current = audioUrl;
+    audio.onended = () => {
+      if (currentAudioUrlRef.current === audioUrl) {
+        URL.revokeObjectURL(audioUrl);
+        currentAudioUrlRef.current = null;
+      }
+      if (currentAudioRef.current === audio) {
+        currentAudioRef.current = null;
+      }
+    };
+    await audio.play();
+  }
+
+  async function speak(text: string) {
+    const spokenText = buildSpokenSummary(text);
+    if (!voiceRepliesEnabled || !spokenText) return;
+
+    stopCurrentSpeech();
+
+    if (voiceMode === "external") {
+      try {
+        await speakWithExternal(spokenText);
+        return;
+      } catch (error) {
+        console.error("External voice playback failed", error);
+        setVoiceMode("browser");
+      }
+    }
+
+    speakWithBrowser(spokenText);
+  }
+
   function reply(text: string) {
     pushMessage("assistant", text);
-    speak(text);
+    void speak(text);
   }
 
   async function requestAIReply(userPrompt: string) {
@@ -1170,6 +1393,7 @@ export function SmartAssistant() {
   function startListening() {
     if (typeof window === "undefined") return;
     if (isRecognitionActiveRef.current || isRecognitionStartingRef.current) return;
+    stopCurrentSpeech();
     const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
 
     if (!Recognition) {
@@ -1179,15 +1403,18 @@ export function SmartAssistant() {
 
     if (!recognitionRef.current) {
       const recognition = new Recognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
+      recognition.continuous = false;
+      recognition.interimResults = false;
       recognition.lang = "en-IN";
       recognition.onresult = (event) => {
         if (!acceptVoiceTranscriptRef.current) return;
-        const transcript = Array.from(event.results)
-          .map((result) => result[0]?.transcript ?? "")
-          .join(" ")
-          .trim();
+        const transcript =
+          Array.from(event.results)
+            .map((result) => result[0]?.transcript ?? "")
+            .filter(Boolean)
+            .at(-1)
+            ?.trim() ?? "";
+        if (!transcript) return;
         latestTranscriptRef.current = transcript;
         setLiveTranscript(transcript);
         setPrompt(transcript);
@@ -1198,7 +1425,7 @@ export function SmartAssistant() {
           if (acceptVoiceTranscriptRef.current) {
             stopListening();
           }
-        }, 1200);
+        }, 150);
       };
       recognition.onerror = (event) => {
         isRecognitionActiveRef.current = false;
@@ -1276,7 +1503,11 @@ export function SmartAssistant() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, liveTranscript, open]);
+  }, [messages, open]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+  }, [liveTranscript]);
 
   useEffect(() => {
     const handleAssistantPrompt = (event: Event) => {
@@ -1296,7 +1527,7 @@ export function SmartAssistant() {
 
     const handleAssistantVoice = () => {
       setOpen(true);
-      setTimeout(() => startListening(), 100);
+      startListening();
     };
 
     window.addEventListener("ops-assistant:prompt", handleAssistantPrompt as EventListener);
@@ -1314,9 +1545,7 @@ export function SmartAssistant() {
       if (silenceTimeoutRef.current) {
         clearTimeout(silenceTimeoutRef.current);
       }
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-      }
+      stopCurrentSpeech();
     };
   }, []);
 
@@ -1808,17 +2037,34 @@ export function SmartAssistant() {
                 {voiceRepliesEnabled ? "Voice replies on" : "Voice replies off"}
               </button>
 
-              <button
-                type="button"
-                onClick={isListening ? stopListening : startListening}
-                className={cn(
-                  "rounded-full border px-3 py-2 text-xs font-semibold transition",
-                  isListening ? "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300" : "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300"
-                )}
-              >
-                {isListening ? <MicOff className="mr-2 inline h-3.5 w-3.5" /> : <Mic className="mr-2 inline h-3.5 w-3.5" />}
-                {isListening ? "Stop listening" : "Start listening"}
-              </button>
+              <label className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300">
+                AI voice
+                <select
+                  value={selectedVoiceName}
+                  onChange={(event) => setSelectedVoiceName(event.target.value)}
+                  className="min-w-[120px] bg-transparent text-xs outline-none"
+                >
+                  {availableVoices.map((voice) => (
+                    <option key={voice.name} value={voice.name}>
+                      {voice.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300">
+                Speed
+                <select
+                  value={String(voiceRate)}
+                  onChange={(event) => setVoiceRate(Number(event.target.value))}
+                  className="bg-transparent text-xs outline-none"
+                >
+                  <option value="0.95">Relaxed</option>
+                  <option value="1.18">Balanced</option>
+                  <option value="1.32">Fast</option>
+                  <option value="1.48">Very Fast</option>
+                </select>
+              </label>
 
               <span className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300">
                 Active target: {currentSheetKey}
@@ -1832,6 +2078,9 @@ export function SmartAssistant() {
                 )}
               >
 	                {aiStatus?.configured ? `${aiStatus.provider} connected${aiStatus.model ? ` | ${aiStatus.model}` : ""}` : "AI not connected"}
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300">
+                Voice engine: {voiceMode === "external" ? "External TTS" : "Browser fallback"}
               </span>
             </div>
           </div>
@@ -1902,6 +2151,21 @@ export function SmartAssistant() {
             ) : null}
 
 	            <div className="flex gap-2 rounded-[22px] border border-violet-100 bg-white p-2 shadow-[0_12px_30px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-white/[0.03] dark:shadow-none sm:gap-3 sm:rounded-[24px]">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={isListening ? stopListening : startListening}
+                aria-label={isListening ? "Stop listening" : "Start listening"}
+                className={cn(
+                  "h-12 w-12 shrink-0 rounded-2xl border shadow-sm",
+                  isListening
+                    ? "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/20"
+                    : "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300 dark:hover:bg-sky-500/20"
+                )}
+              >
+                {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              </Button>
               <Input
                 ref={inputRef}
                 value={prompt}

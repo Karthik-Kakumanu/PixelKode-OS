@@ -20,6 +20,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const loadSheets = useBusinessStore((state) => state.loadSheets);
   const syncPendingChanges = useBusinessStore((state) => state.syncPendingChanges);
+  const refreshFromServer = useBusinessStore((state) => state.refreshFromServer);
   const theme = useBusinessStore((state) => state.theme);
   const [interactiveToolsReady, setInteractiveToolsReady] = useState(false);
 
@@ -31,9 +32,9 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     let idleId: number | null = null;
 
     if ("requestIdleCallback" in window) {
-      idleId = window.requestIdleCallback(() => setInteractiveToolsReady(true), { timeout: 1200 });
+      idleId = window.requestIdleCallback(() => setInteractiveToolsReady(true), { timeout: 450 });
     } else {
-      timeoutId = globalThis.setTimeout(() => setInteractiveToolsReady(true), 600);
+      timeoutId = globalThis.setTimeout(() => setInteractiveToolsReady(true), 180);
     }
 
     return () => {
@@ -73,12 +74,15 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     if (pathname === "/login") return;
 
     const handleOnline = () => {
-      void syncPendingChanges();
+      void (async () => {
+        await syncPendingChanges();
+        await refreshFromServer({ force: true });
+      })();
     };
 
     window.addEventListener("online", handleOnline);
     return () => window.removeEventListener("online", handleOnline);
-  }, [pathname, syncPendingChanges]);
+  }, [pathname, refreshFromServer, syncPendingChanges]);
 
   return (
     <>

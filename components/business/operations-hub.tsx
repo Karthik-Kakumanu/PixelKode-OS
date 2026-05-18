@@ -59,6 +59,7 @@ function relativeTime(timestamp: string) {
 export function OperationsHub() {
   const sheets = useBusinessStore((state) => state.sheets);
   const backups = useBusinessStore((state) => state.backups);
+  const theme = useBusinessStore((state) => state.theme);
   const createRestorePoint = useBusinessStore((state) => state.createRestorePoint);
   const restoreBackup = useBusinessStore((state) => state.restoreBackup);
   const refreshBackups = useBusinessStore((state) => state.refreshBackups);
@@ -118,8 +119,16 @@ export function OperationsHub() {
 
   return (
     <div className="space-y-6">
-      <Card className="overflow-hidden rounded-[32px] border border-slate-200/80 bg-white/90 p-0 shadow-[0_24px_80px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-950/72">
-        <div className="border-b border-slate-200/80 bg-white/75 px-5 py-5 dark:border-white/10 dark:bg-white/[0.03]">
+      <Card
+        className={`overflow-hidden rounded-[32px] border p-0 shadow-[0_24px_80px_rgba(15,23,42,0.08)] ${
+          theme === "dark" ? "border-white/10 bg-slate-950/92" : "border-slate-200/80 bg-white/90"
+        }`}
+      >
+        <div
+          className={`border-b px-5 py-5 ${
+            theme === "dark" ? "border-white/10 bg-slate-900/88" : "border-slate-200/80 bg-white/75"
+          }`}
+        >
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-fuchsia-600 dark:text-cyan-300">Live Operations Hub</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">Search, forecast, restore, and export from the current live workspace</h1>
           <p className="mt-2 max-w-3xl text-sm text-slate-600 dark:text-zinc-400">
@@ -129,7 +138,11 @@ export function OperationsHub() {
 
         <div className="grid gap-6 p-5 xl:grid-cols-[1.15fr_0.85fr]">
           <div className="space-y-6">
-            <Card className="rounded-[28px] border border-slate-200/80 bg-white/80 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+            <Card
+              className={`rounded-[28px] border p-5 ${
+                theme === "dark" ? "border-white/10 bg-slate-900/84" : "border-slate-200/80 bg-white/80"
+              }`}
+            >
               <div className="flex items-center gap-2">
                 <Search className="h-4 w-4 text-fuchsia-500 dark:text-cyan-300" />
                 <p className="text-sm font-semibold text-slate-900 dark:text-white">Search across leads, projects, invoices, documents, collections, and notes</p>
@@ -144,7 +157,12 @@ export function OperationsHub() {
                 {searchQuery.trim() ? (
                   searchResults.length > 0 ? (
                     searchResults.map((result) => (
-                      <div key={result.id} className="rounded-[22px] border border-slate-200 bg-slate-50/80 px-4 py-4 dark:border-white/10 dark:bg-white/[0.03]">
+                      <div
+                        key={result.id}
+                        className={`rounded-[22px] border px-4 py-4 ${
+                          theme === "dark" ? "border-white/10 bg-slate-950/76" : "border-slate-200 bg-slate-50/80"
+                        }`}
+                      >
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="text-sm font-semibold text-slate-900 dark:text-white">{result.title}</p>
@@ -158,12 +176,24 @@ export function OperationsHub() {
                       </div>
                     ))
                   ) : (
-                    <div className="rounded-[22px] border border-dashed border-slate-200 bg-slate-50/70 px-4 py-8 text-center text-sm text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400">
+                    <div
+                      className={`rounded-[22px] border border-dashed px-4 py-8 text-center text-sm ${
+                        theme === "dark"
+                          ? "border-white/10 bg-slate-950/72 text-zinc-400"
+                          : "border-slate-200 bg-slate-50/70 text-slate-500"
+                      }`}
+                    >
                       No live matches found for this search yet.
                     </div>
                   )
                 ) : (
-                  <div className="rounded-[22px] border border-dashed border-slate-200 bg-slate-50/70 px-4 py-8 text-center text-sm text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400">
+                  <div
+                    className={`rounded-[22px] border border-dashed px-4 py-8 text-center text-sm ${
+                      theme === "dark"
+                        ? "border-white/10 bg-slate-950/72 text-zinc-400"
+                        : "border-slate-200 bg-slate-50/70 text-slate-500"
+                    }`}
+                  >
                     Start typing to search every live sheet plus saved document presets.
                   </div>
                 )}
@@ -176,7 +206,12 @@ export function OperationsHub() {
                 { label: "Expected this month", value: formatCurrency(forecast.expectedCollectionsThisMonth), helper: "Pending collections likely closing before month end" },
                 { label: "Pending risk amount", value: formatCurrency(forecast.pendingRiskAmount), helper: "Overdue or unanchored pending cash that needs attention" }
               ].map((item) => (
-                <Card key={item.label} className="rounded-[26px] border border-slate-200/80 bg-white/88 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+                <Card
+                  key={item.label}
+                  className={`rounded-[26px] border p-5 ${
+                    theme === "dark" ? "border-white/10 bg-slate-900/82" : "border-slate-200/80 bg-white/88"
+                  }`}
+                >
                   <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-zinc-500">{item.label}</p>
                   <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">{item.value}</p>
                   <p className="mt-2 text-sm text-slate-500 dark:text-zinc-400">{item.helper}</p>
@@ -184,7 +219,11 @@ export function OperationsHub() {
               ))}
             </div>
 
-            <Card className="rounded-[28px] border border-slate-200/80 bg-white/80 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+            <Card
+              className={`rounded-[28px] border p-5 ${
+                theme === "dark" ? "border-white/10 bg-slate-900/84" : "border-slate-200/80 bg-white/80"
+              }`}
+            >
               <div className="flex items-center gap-2">
                 <WalletCards className="h-4 w-4 text-fuchsia-500 dark:text-cyan-300" />
                 <p className="text-sm font-semibold text-slate-900 dark:text-white">Cash-flow forecast and recurring reminders</p>
@@ -193,7 +232,12 @@ export function OperationsHub() {
                 <div className="grid gap-3">
                   {forecast.upcoming.length > 0 ? (
                     forecast.upcoming.slice(0, 8).map((item) => (
-                      <div key={item.id} className="rounded-[22px] border border-slate-200 bg-slate-50/80 px-4 py-4 dark:border-white/10 dark:bg-white/[0.03]">
+                      <div
+                        key={item.id}
+                        className={`rounded-[22px] border px-4 py-4 ${
+                          theme === "dark" ? "border-white/10 bg-slate-950/76" : "border-slate-200 bg-slate-50/80"
+                        }`}
+                      >
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.projectName}</p>
@@ -208,14 +252,25 @@ export function OperationsHub() {
                       </div>
                     ))
                   ) : (
-                    <div className="rounded-[22px] border border-dashed border-slate-200 bg-slate-50/70 px-4 py-8 text-center text-sm text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400">
+                    <div
+                      className={`rounded-[22px] border border-dashed px-4 py-8 text-center text-sm ${
+                        theme === "dark"
+                          ? "border-white/10 bg-slate-950/72 text-zinc-400"
+                          : "border-slate-200 bg-slate-50/70 text-slate-500"
+                      }`}
+                    >
                       No upcoming collection signals yet. Add project values, pending amounts, and dates to unlock the forecast.
                     </div>
                   )}
                 </div>
                 <div className="grid gap-3">
                   {reminders.map((reminder) => (
-                    <div key={reminder.id} className="rounded-[22px] border border-slate-200 bg-white/85 px-4 py-4 dark:border-white/10 dark:bg-white/[0.03]">
+                    <div
+                      key={reminder.id}
+                      className={`rounded-[22px] border px-4 py-4 ${
+                        theme === "dark" ? "border-white/10 bg-slate-950/76" : "border-slate-200 bg-white/85"
+                      }`}
+                    >
                       <p className="text-sm font-semibold text-slate-900 dark:text-white">{reminder.title}</p>
                       <p className="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-zinc-500">{reminder.frequency} • due {reminder.dueDate}</p>
                       <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-zinc-300">{reminder.description}</p>
@@ -227,7 +282,11 @@ export function OperationsHub() {
           </div>
 
           <div className="space-y-6">
-            <Card className="rounded-[28px] border border-slate-200/80 bg-white/80 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+            <Card
+              className={`rounded-[28px] border p-5 ${
+                theme === "dark" ? "border-white/10 bg-slate-900/84" : "border-slate-200/80 bg-white/80"
+              }`}
+            >
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-slate-900 dark:text-white">Auto backups and restore points</p>
@@ -254,7 +313,12 @@ export function OperationsHub() {
               <div className="mt-4 grid max-h-[360px] gap-3 overflow-y-auto pr-1">
                 {backups.length > 0 ? (
                   backups.map((backup) => (
-                    <div key={backup.id} className="rounded-[22px] border border-slate-200 bg-slate-50/80 px-4 py-4 dark:border-white/10 dark:bg-white/[0.03]">
+                    <div
+                      key={backup.id}
+                      className={`rounded-[22px] border px-4 py-4 ${
+                        theme === "dark" ? "border-white/10 bg-slate-950/76" : "border-slate-200 bg-slate-50/80"
+                      }`}
+                    >
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-sm font-semibold text-slate-900 dark:text-white">{backup.label}</p>
@@ -280,14 +344,24 @@ export function OperationsHub() {
                     </div>
                   ))
                 ) : (
-                  <div className="rounded-[22px] border border-dashed border-slate-200 bg-slate-50/70 px-4 py-8 text-center text-sm text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400">
+                  <div
+                    className={`rounded-[22px] border border-dashed px-4 py-8 text-center text-sm ${
+                      theme === "dark"
+                        ? "border-white/10 bg-slate-950/72 text-zinc-400"
+                        : "border-slate-200 bg-slate-50/70 text-slate-500"
+                    }`}
+                  >
                     Restore points will appear here as the live workspace changes.
                   </div>
                 )}
               </div>
             </Card>
 
-            <Card className="rounded-[28px] border border-slate-200/80 bg-white/80 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+            <Card
+              className={`rounded-[28px] border p-5 ${
+                theme === "dark" ? "border-white/10 bg-slate-900/84" : "border-slate-200/80 bg-white/80"
+              }`}
+            >
               <p className="text-sm font-semibold text-slate-900 dark:text-white">Realtime export center</p>
               <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">Each export is generated from the current in-memory workspace state, not stale snapshots.</p>
 
@@ -320,7 +394,11 @@ export function OperationsHub() {
                   Export operations PDF report
                 </Button>
 
-                <div className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                <div
+                  className={`rounded-[22px] border p-4 ${
+                    theme === "dark" ? "border-white/10 bg-slate-950/76" : "border-slate-200 bg-slate-50/80"
+                  }`}
+                >
                   <p className="text-sm font-semibold text-slate-900 dark:text-white">Client payment history</p>
                   <Input value={clientQuery} onChange={(event) => setClientQuery(event.target.value)} placeholder="Type a client name or project name" className="mt-3" />
                   <div className="mt-3 grid gap-2 text-sm text-slate-600 dark:text-zinc-300">

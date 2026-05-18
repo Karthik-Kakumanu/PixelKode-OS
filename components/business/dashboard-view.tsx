@@ -549,7 +549,9 @@ export function DashboardView() {
         const previousAmountReceived = Number(project.amountReceived ?? 0);
         const nextAmountReceived = Number(project.amountReceived ?? 0) + amount;
         const revenueRowId = createCommandRowId("revenue");
-        updateCell("projects", projectIndex, "amountReceived", nextAmountReceived);
+        updateCell("projects", projectIndex, "amountReceived", nextAmountReceived, {
+          suppressProjectReceiptLog: true
+        });
         addRowWithValues(
           "revenue",
           {
@@ -568,7 +570,9 @@ export function DashboardView() {
         lastUndoRef.current = {
           label: "Undo income entry",
           undo: () => {
-            updateCell("projects", projectIndex, "amountReceived", previousAmountReceived);
+            updateCell("projects", projectIndex, "amountReceived", previousAmountReceived, {
+              suppressProjectReceiptLog: true
+            });
             const revenueIndex = useBusinessStore.getState().sheets.revenue.rows.findIndex((row) => String(row.id ?? "") === revenueRowId);
             if (revenueIndex >= 0) {
               useBusinessStore.getState().deleteRow("revenue", revenueIndex);
@@ -874,7 +878,7 @@ export function DashboardView() {
   const todayMetrics = [
     { label: "Follow-ups today", value: `${todaysFollowUps.length}`, helper: "Leads that need outreach before the day closes" },
     { label: "Due project items", value: `${dueProjectItems.length}`, helper: "Projects at or past delivery date and not completed" },
-    { label: "Received today", value: formatCurrency(receivedMoneyToday), helper: "Manual income entries logged for today" },
+    { label: "Received today", value: formatCurrency(receivedMoneyToday), helper: "Today's income entries, including direct project receipt updates" },
     { label: "Pending collections", value: formatCurrency(totalPending), helper: `${projects.filter((project) => Number(project.pendingAmount ?? 0) > 0).length} projects still pending` },
     { label: "Today's timetable", value: `${todayTimetableEntries.length}`, helper: todayTimetableEntries.length > 0 ? todayTimetableEntries.slice(0, 2).map((item) => `${item.slot}: ${item.value}`).join(" | ") : "No work blocks planned yet" }
   ];

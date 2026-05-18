@@ -146,6 +146,24 @@ function asBulletLines(value: string) {
     .map((line) => (line.startsWith("-") ? line : `- ${line}`));
 }
 
+function asPlainLines(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function joinSentences(parts: Array<string | undefined>) {
+  return parts
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
+function formatDateLabel(value: string, fallback: string) {
+  return value.trim() || fallback;
+}
+
 function moneyLabel(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return "Not specified";
@@ -180,60 +198,196 @@ export function buildDocumentSections(data: DocumentFormData) {
   const sections: DocumentSection[] = [];
   const computedTotal = calculateLineItemTotal(data.lineItems);
   const effectiveTotal = data.totalAmount.trim() ? moneyLabel(data.totalAmount) : computedTotal > 0 ? moneyLabel(String(computedTotal)) : "Not specified";
-
-  pushSection(sections, "Document Summary", [
-    `${docMeta.label} for ${data.projectName || "Untitled Project"}`,
-    `Prepared by ${data.businessName || "Your Business"}`,
-    data.clientBusinessName ? `Prepared for ${data.clientBusinessName}` : "",
-    data.clientName ? `Primary contact: ${data.clientName}` : "",
-    data.invoiceNumber ? `Reference no: ${data.invoiceNumber}` : ""
+  const businessName = data.businessName || "Your Business";
+  const clientName = data.clientBusinessName || data.clientName || "Client";
+  const projectName = data.projectName || "Untitled Project";
+  const serviceName = data.serviceName || "Requested services";
+  const startDate = formatDateLabel(data.startDate, "to be finalized");
+  const deliveryDate = formatDateLabel(data.deliveryDate, "as per execution timeline");
+  const dueDate = formatDateLabel(data.dueDate, "as per agreed payment terms");
+  const invoiceDate = formatDateLabel(data.invoiceDate, "Not specified");
+  const duration = formatDateLabel(data.contractDuration, "valid for the active project term");
+  const objectiveText = joinSentences([
+    data.projectObjectives,
+    data.notes ? `Context: ${data.notes}` : ""
   ]);
+  const assumptions = asBulletLines(data.assumptions);
+  const deliverables = asBulletLines(data.deliverables);
+  const onboardingItems = asBulletLines(data.onboardingItems);
+  const formalDate = data.startDate || data.invoiceDate || "the date of issue";
+  const baseCommercials = [
+    `Project / service value: ${effectiveTotal}`,
+    data.advancePercent ? `Advance payable before commencement: ${data.advancePercent}%` : "",
+    data.milestonePlan ? `Milestone / split payment plan: ${data.milestonePlan}` : "",
+    data.paymentTerms ? `Payment terms: ${data.paymentTerms}` : ""
+  ];
 
-  pushSection(sections, "Business Details", [
-    data.businessName,
-    data.businessAddress,
-    data.businessEmail ? `Email: ${data.businessEmail}` : "",
-    data.businessPhone ? `Phone: ${data.businessPhone}` : ""
-  ]);
-
-  pushSection(sections, "Client Details", [
-    data.clientBusinessName,
-    data.clientName ? `Contact: ${data.clientName}` : "",
-    data.clientAddress,
-    data.clientEmail ? `Email: ${data.clientEmail}` : ""
-  ]);
-
-  if (["proposal", "quotation", "agreement", "contract", "project-brief"].includes(data.documentType)) {
-    pushSection(sections, "Project Scope", [
-      data.projectName ? `Project: ${data.projectName}` : "",
-      data.serviceName ? `Service: ${data.serviceName}` : "",
-      data.scopeOfWork,
-      ...asBulletLines(data.deliverables)
-    ]);
-  }
-
-  if (["proposal", "quotation", "agreement", "contract", "project-brief"].includes(data.documentType)) {
-    pushSection(sections, "Timeline", [
-      data.timeline,
-      data.startDate ? `Start date: ${data.startDate}` : "",
-      data.deliveryDate ? `Expected delivery: ${data.deliveryDate}` : "",
-      data.contractDuration ? `Duration: ${data.contractDuration}` : ""
-    ]);
-  }
-
-  if (["proposal", "quotation", "agreement", "contract", "invoice"].includes(data.documentType)) {
-    pushSection(sections, "Commercials", [
-      `Total amount: ${effectiveTotal}`,
-      data.advancePercent ? `Advance before starting: ${data.advancePercent}%` : "",
-      data.milestonePlan,
-      data.paymentTerms
-    ]);
+  switch (data.documentType) {
+    case "proposal":
+      pushSection(sections, "1. Proposal Overview", [
+        `This proposal is submitted by ${businessName} to ${clientName} in relation to ${projectName}.`,
+        joinSentences([
+          `The proposed engagement covers ${serviceName}.`,
+          data.scopeOfWork || "",
+          objectiveText || ""
+        ]),
+        data.invoiceNumber ? `Reference number: ${data.invoiceNumber}.` : ""
+      ]);
+      pushSection(sections, "2. Scope of Work and Deliverables", [
+        `Based on the discussions and project requirements shared by the client, ${businessName} proposes to execute the following scope of work.`,
+        data.scopeOfWork,
+        ...deliverables
+      ]);
+      pushSection(sections, "3. Delivery Approach and Process", [
+        `The work is proposed to commence on ${startDate} and shall progress through planning, execution, internal review, client review, revision, approval, and final handover.`,
+        data.timeline ? `Estimated execution timeline: ${data.timeline}` : "",
+        data.deliveryDate ? `Target completion / delivery date: ${deliveryDate}` : "",
+        `The client shall provide timely feedback, approvals, content, and required access details so that the execution timeline can be maintained without unnecessary delay.`
+      ]);
+      pushSection(sections, "4. Commercial Proposal", baseCommercials);
+      pushSection(sections, "5. Assumptions, Dependencies, and Conditions", [
+        ...assumptions,
+        data.termsAndConditions,
+        data.notes
+      ]);
+      break;
+    case "quotation":
+      pushSection(sections, "1. Quotation Summary", [
+        `This quotation is issued by ${businessName} to ${clientName} for ${projectName}.`,
+        `Quoted service category: ${serviceName}.`,
+        data.invoiceNumber ? `Quotation reference: ${data.invoiceNumber}` : "",
+        `Quotation validity: ${data.quotationValidityDays || "15"} days from the date of issue.`
+      ]);
+      pushSection(sections, "2. Scope and Deliverables", [
+        `The quotation has been prepared based on the scope, discussions, and deliverable expectations approved by the client.`,
+        data.scopeOfWork,
+        ...deliverables
+      ]);
+      pushSection(sections, "3. Commercial Breakdown", baseCommercials);
+      pushSection(sections, "4. Delivery Schedule", [
+        data.timeline,
+        `Expected start date: ${startDate}`,
+        data.deliveryDate ? `Expected completion date: ${deliveryDate}` : "",
+        `Delivery dates are subject to timely approvals, content submission, and client-side dependencies.`
+      ]);
+      pushSection(sections, "5. Quotation Terms", [
+        data.termsAndConditions,
+        `Any scope addition, redesign, additional feature, or extra requirement outside the approved quotation shall be estimated separately and billed as additional work.`,
+        data.notes
+      ]);
+      break;
+    case "agreement":
+    case "contract":
+      pushSection(sections, "1. Parties and Purpose", [
+        `This ${docMeta.label.toLowerCase()} is made on ${formalDate} between ${businessName} (hereinafter referred to as the Service Provider) and ${clientName} (hereinafter referred to as the Client).`,
+        joinSentences([
+          `The engagement includes ${serviceName}.`,
+          data.scopeOfWork || ""
+        ]),
+        `The purpose of this document is to record the scope, commercials, responsibilities, and working terms related to ${projectName}. Effective start date: ${startDate}.${data.contractDuration ? ` Engagement duration: ${duration}.` : ""}`
+      ]);
+      pushSection(sections, "2. Scope, Deliverables, and Work Coverage", [
+        `${businessName} agrees to provide the approved services and deliverables in accordance with the discussions, approvals, and business requirements shared by the Client.`,
+        data.scopeOfWork,
+        ...deliverables,
+        `Any deliverable, revision, module, integration, or activity outside the above scope shall be treated as additional work and may require separate approval, pricing, and timeline.`
+      ]);
+      pushSection(sections, "3. Commercial Terms and Payment Process", [
+        ...baseCommercials,
+        `All approved payments shall be cleared strictly as per the agreed milestone flow, and any balance amount shall be paid before final handover wherever applicable.`,
+        `If any future additional work is requested by the Client, the same shall follow the official payment terms of ${businessName} and may require advance payment before commencement.`
+      ]);
+      pushSection(sections, "4. Execution Timeline and Working Process", [
+        data.timeline ? `Planned execution timeline: ${data.timeline}` : "",
+        `Work is expected to commence on ${startDate}${data.deliveryDate ? ` and the target delivery is ${deliveryDate}` : ""}.`,
+        `All timelines mentioned in this document shall be calculated on business working days only and may shift if approvals, inputs, or dependencies are delayed from the Client side.`
+      ]);
+      pushSection(sections, "5. Client Responsibilities and Approvals", [
+        `The Client shall provide required content, branding assets, access credentials, technical information, and timely approvals necessary for smooth project execution.`,
+        `Review feedback should be consolidated wherever possible so that corrections and revisions can be handled efficiently and without confusion.`,
+        ...assumptions
+      ]);
+      pushSection(sections, "6. Revisions, Additional Work, and Change Requests", [
+        `Reasonable revisions within the approved scope shall be handled during the active delivery cycle subject to practical limits and agreed review rounds.`,
+        `Any new page, feature, redesign, integration, content population, modification, or post-approval change request beyond the current scope may attract additional cost and additional timeline.`,
+        data.notes
+      ]);
+      pushSection(sections, "7. Ownership, Confidentiality, and Usage Rights", [
+        `Upon receipt of all outstanding dues, the final approved project assets and deliverables shall belong to the Client unless otherwise agreed in writing.`,
+        `Both parties agree to maintain confidentiality regarding commercial details, access credentials, project data, internal communication, and other sensitive information related to the work.`,
+        `${businessName} reserves the right to showcase non-confidential parts of the completed work in its portfolio, presentations, or promotional materials unless restricted in writing by the Client.`
+      ]);
+      pushSection(sections, "8. Support, Maintenance, and General Terms", [
+        `${businessName} shall provide project-related support and assistance as mutually agreed. Ongoing maintenance, upgrades, technical support, or retainer work shall be governed by the agreed service plan wherever applicable.`,
+        data.termsAndConditions,
+        `By signing this document, both parties confirm that they have read, understood, and agreed to all the terms and conditions stated above.`
+      ]);
+      break;
+    case "invoice":
+      pushSection(sections, "1. Invoice Summary", [
+        `Invoice number: ${data.invoiceNumber || "Not assigned"}`,
+        `Invoice date: ${invoiceDate}`,
+        `Bill issued by ${businessName} for ${clientName}`,
+        `Project / service: ${projectName} - ${serviceName}`,
+        `Total payable amount: ${effectiveTotal}`
+      ]);
+      pushSection(sections, "2. Billing and Payment Details", [
+        `Payment due date: ${dueDate}`,
+        data.paymentTerms ? `Payment instructions: ${data.paymentTerms}` : "",
+        data.milestonePlan ? `Billing stage / milestone note: ${data.milestonePlan}` : "",
+        `The above amount is payable against the approved scope and billing stage mentioned in this invoice.`,
+        data.notes
+      ]);
+      break;
+    case "onboarding":
+      pushSection(sections, "1. Engagement Kickoff Summary", [
+        `${businessName} is preparing to begin ${projectName} for ${clientName}.`,
+        `Primary service / engagement area: ${serviceName}.`,
+        data.scopeOfWork,
+        data.timeline ? `Initial delivery expectation: ${data.timeline}` : ""
+      ]);
+      pushSection(sections, "2. Required Inputs, Assets, and Access", onboardingItems);
+      pushSection(sections, "3. Delivery Workflow and Communication Process", [
+        `The project shall move through kickoff, requirement alignment, execution, review, revision, approval, and final handover.`,
+        `The Client should nominate the primary point of contact for approvals, consolidated feedback, milestone confirmations, and day-to-day communication.`,
+        data.notes
+      ]);
+      pushSection(sections, "4. Important Dependencies", [
+        ...assumptions,
+        data.termsAndConditions
+      ]);
+      break;
+    case "project-brief":
+      pushSection(sections, "1. Project Background", [
+        `${projectName} is being executed for ${clientName} under ${businessName}.`,
+        `Service category: ${serviceName}.`,
+        data.scopeOfWork,
+        objectiveText
+      ]);
+      pushSection(sections, "2. Objectives and Success Direction", [
+        data.projectObjectives,
+        `The execution team should align design, development, content, and delivery decisions with the approved client goal and business outcome.`
+      ]);
+      pushSection(sections, "3. Approved Scope and Deliverables", deliverables);
+      pushSection(sections, "4. Execution Plan and Timeline", [
+        data.timeline,
+        `Start date: ${startDate}`,
+        data.deliveryDate ? `Target delivery date: ${deliveryDate}` : "",
+        `All work should follow milestone review, approval checkpoints, and final handover discipline.`
+      ]);
+      pushSection(sections, "5. Dependencies, Assumptions, and Risks", [
+        ...assumptions,
+        data.termsAndConditions,
+        data.notes
+      ]);
+      pushSection(sections, "6. Commercial Snapshot", baseCommercials);
+      break;
   }
 
   if (data.lineItems.some((item) => item.description.trim() || item.rate.trim())) {
     pushSection(
       sections,
-      "Line Items",
+      data.documentType === "invoice" ? "3. Line Item Breakdown" : "Detailed Line Item Breakdown",
       data.lineItems
         .filter((item) => item.description.trim() || item.rate.trim())
         .map((item) => {
@@ -244,49 +398,11 @@ export function buildDocumentSections(data: DocumentFormData) {
     );
   }
 
-  if (data.documentType === "quotation") {
-    pushSection(sections, "Quotation Terms", [
-      `Quotation validity: ${data.quotationValidityDays || "15"} days`,
-      data.termsAndConditions
-    ]);
-  }
-
-  if (data.documentType === "invoice") {
-    pushSection(sections, "Invoice Details", [
-      `Invoice number: ${data.invoiceNumber || "Not assigned"}`,
-      data.invoiceDate ? `Invoice date: ${data.invoiceDate}` : "",
-      data.dueDate ? `Due date: ${data.dueDate}` : "",
-      data.notes
-    ]);
-  }
-
-  if (data.documentType === "onboarding") {
-    pushSection(sections, "Onboarding Checklist", [
-      data.projectName ? `Project: ${data.projectName}` : "",
-      data.serviceName ? `Service: ${data.serviceName}` : "",
-      ...asBulletLines(data.onboardingItems)
-    ]);
-  }
-
-  if (data.documentType === "project-brief") {
-    pushSection(sections, "Project Objectives", [
-      data.projectObjectives,
-      ...asBulletLines(data.assumptions)
-    ]);
-  }
-
-  if (["agreement", "contract"].includes(data.documentType)) {
-    pushSection(sections, "Terms and Conditions", [
-      data.termsAndConditions,
-      data.notes
-    ]);
-  }
-
   pushSection(sections, "Prepared By", [
-    data.senderName,
+    data.senderName || businessName,
     data.senderTitle,
-    data.senderEmail ? `Email: ${data.senderEmail}` : "",
-    data.senderPhone ? `Phone: ${data.senderPhone}` : ""
+    data.senderEmail ? `Email: ${data.senderEmail}` : data.businessEmail ? `Email: ${data.businessEmail}` : "",
+    data.senderPhone ? `Phone: ${data.senderPhone}` : data.businessPhone ? `Phone: ${data.businessPhone}` : ""
   ]);
 
   return sections;
@@ -320,16 +436,15 @@ function wrapLine(text: string, maxChars = 92) {
 export function createPdfBlob(title: string, sections: DocumentSection[], lineItems: DocumentLineItem[] = []) {
   const pageWidth = 595;
   const pageHeight = 842;
-  const leftMargin = 48;
-  const topMargin = 132;
-  const bottomMargin = 72;
+  const leftMargin = 56;
+  const topMargin = 116;
+  const bottomMargin = 68;
   const lineHeight = 15;
-  const sectionGap = 16;
-  const headerHeight = 88;
-  const footerY = 36;
-  const brandColor = "0.08 0.56 0.78";
-  const brandSoft = "0.92 0.97 1";
-  const textMuted = "0.39 0.45 0.54";
+  const sectionGap = 14;
+  const footerY = 34;
+  const brandColor = "0 0 0";
+  const textColor = "0 0 0";
+  const mutedColor = "0.35 0.35 0.35";
 
   const pages: string[][] = [];
   let currentPage: string[] = [];
@@ -342,13 +457,12 @@ export function createPdfBlob(title: string, sections: DocumentSection[], lineIt
     pageNumber += 1;
     y = pageHeight - topMargin;
 
-    currentPage.push(`${brandColor} rg 0 ${pageHeight - headerHeight} ${pageWidth} ${headerHeight} re f`);
-    currentPage.push(`0.98 0.99 1 rg 0 ${pageHeight - headerHeight - 12} ${pageWidth} 12 re f`);
-    currentPage.push(`BT /F2 24 Tf 1 0 0 1 ${leftMargin} ${pageHeight - 48} Tm (PixelKode OS) Tj ET`);
-    currentPage.push(`BT /F1 11 Tf 1 0 0 1 ${leftMargin} ${pageHeight - 68} Tm (${escapePdfText(title)}) Tj ET`);
-    currentPage.push(`${brandSoft} rg ${leftMargin} ${footerY + 18} ${pageWidth - leftMargin * 2} 1 re f`);
-    currentPage.push(`0.45 0.52 0.62 rg BT /F1 9 Tf 1 0 0 1 ${leftMargin} ${footerY} Tm (Generated from PixelKode OS Documents Workspace) Tj ET`);
-    currentPage.push(`0.45 0.52 0.62 rg BT /F1 9 Tf 1 0 0 1 ${pageWidth - 100} ${footerY} Tm (Page ${pageNumber}) Tj ET`);
+    currentPage.push(`${brandColor} rg ${leftMargin} ${pageHeight - 44} ${pageWidth - leftMargin * 2} 2 re f`);
+    currentPage.push(`BT /F2 13 Tf 1 0 0 1 ${leftMargin} ${pageHeight - 62} Tm (PixelKode OS) Tj ET`);
+    currentPage.push(`BT /F2 20 Tf 1 0 0 1 ${leftMargin} ${pageHeight - 88} Tm (${escapePdfText(title)}) Tj ET`);
+    currentPage.push(`${brandColor} rg ${leftMargin} ${pageHeight - 98} ${pageWidth - leftMargin * 2} 1 re f`);
+    currentPage.push(`${mutedColor} rg BT /F1 9 Tf 1 0 0 1 ${leftMargin} ${footerY} Tm (Generated from PixelKode OS Documents Workspace) Tj ET`);
+    currentPage.push(`${mutedColor} rg BT /F1 9 Tf 1 0 0 1 ${pageWidth - 96} ${footerY} Tm (Page ${pageNumber}) Tj ET`);
   };
 
   const ensureSpace = (requiredHeight: number) => {
@@ -357,79 +471,73 @@ export function createPdfBlob(title: string, sections: DocumentSection[], lineIt
     }
   };
 
-  const addText = (text: string, x: number, yPosition: number, fontSize = 11, font = "F1", color = "0.16 0.23 0.32") => {
+  const addText = (text: string, x: number, yPosition: number, fontSize = 11, font = "F1", color = textColor) => {
     currentPage.push(`${color} rg BT /${font} ${fontSize} Tf 1 0 0 1 ${x} ${yPosition} Tm (${escapePdfText(text)}) Tj ET`);
   };
 
   sections.forEach((section) => {
-    const wrappedLines = section.lines.flatMap((line) => wrapLine(line, 76));
-    const sectionHeight = 42 + wrappedLines.length * lineHeight + 14;
+    const wrappedLines = section.lines.flatMap((line) => wrapLine(line, line.startsWith("- ") ? 78 : 86));
+    const sectionHeight = 26 + wrappedLines.length * lineHeight + 8;
     ensureSpace(sectionHeight + sectionGap);
 
-    const boxY = y - sectionHeight + 8;
-    currentPage.push(`${brandSoft} rg ${leftMargin} ${boxY} ${pageWidth - leftMargin * 2} ${sectionHeight} re f`);
-    currentPage.push(`0.88 0.93 0.98 RG 1 w ${leftMargin} ${boxY} ${pageWidth - leftMargin * 2} ${sectionHeight} re S`);
-    currentPage.push(`${brandColor} rg ${leftMargin} ${boxY + sectionHeight - 26} ${pageWidth - leftMargin * 2} 22 re f`);
-    addText(section.heading, leftMargin + 12, boxY + sectionHeight - 20, 11, "F2", "1 1 1");
+    addText(section.heading, leftMargin, y, 11.5, "F2", brandColor);
+    currentPage.push(`${brandColor} rg ${leftMargin} ${y - 6} ${pageWidth - leftMargin * 2} 0.8 re f`);
 
-    let lineY = boxY + sectionHeight - 44;
+    let lineY = y - 22;
     wrappedLines.forEach((line) => {
-      addText(line, leftMargin + 14, lineY, 10.5, "F1", line.startsWith("- ") ? "0.22 0.28 0.37" : "0.18 0.24 0.32");
+      const isBullet = line.startsWith("- ");
+      addText(isBullet ? `- ${line.slice(2)}` : line, leftMargin + (isBullet ? 8 : 0), lineY, 10.4, "F1", textColor);
       lineY -= lineHeight;
     });
 
-    y = boxY - sectionGap;
+    y = lineY - 2 - sectionGap;
   });
 
   const printableLineItems = lineItems.filter((item) => item.description.trim() || item.rate.trim());
   if (printableLineItems.length > 0) {
     const colX = {
-      desc: leftMargin + 12,
-      qty: leftMargin + 290,
-      rate: leftMargin + 350,
-      amount: leftMargin + 445
+      desc: leftMargin + 10,
+      qty: leftMargin + 292,
+      rate: leftMargin + 352,
+      amount: leftMargin + 444
     };
     const tableWidth = pageWidth - leftMargin * 2;
-    const rowHeight = 22;
-    const headerRowHeight = 26;
-    const totalRowsHeight = headerRowHeight + printableLineItems.length * rowHeight + 34;
+    const rowHeight = 21;
+    const headerRowHeight = 24;
+    const totalRowsHeight = headerRowHeight + printableLineItems.length * rowHeight + 30;
     ensureSpace(totalRowsHeight + 20);
 
     const tableTopY = y;
-    currentPage.push(`${brandSoft} rg ${leftMargin} ${tableTopY - totalRowsHeight} ${tableWidth} ${totalRowsHeight} re f`);
-    currentPage.push(`0.88 0.93 0.98 RG 1 w ${leftMargin} ${tableTopY - totalRowsHeight} ${tableWidth} ${totalRowsHeight} re S`);
-    currentPage.push(`${brandColor} rg ${leftMargin} ${tableTopY - headerRowHeight} ${tableWidth} ${headerRowHeight} re f`);
-    addText("Pricing Table", leftMargin + 12, tableTopY - 18, 11, "F2", "1 1 1");
-    addText("Item", colX.desc, tableTopY - 42, 10, "F2");
-    addText("Qty", colX.qty, tableTopY - 42, 10, "F2");
-    addText("Rate", colX.rate, tableTopY - 42, 10, "F2");
-    addText("Amount", colX.amount, tableTopY - 42, 10, "F2");
+    addText("Line Item Table", leftMargin, tableTopY, 11.5, "F2", brandColor);
+    currentPage.push(`${brandColor} rg ${leftMargin} ${tableTopY - 18} ${tableWidth} 0.8 re f`);
+    addText("Item", colX.desc, tableTopY - 36, 10, "F2");
+    addText("Qty", colX.qty, tableTopY - 36, 10, "F2");
+    addText("Rate", colX.rate, tableTopY - 36, 10, "F2");
+    addText("Amount", colX.amount, tableTopY - 36, 10, "F2");
 
-    let rowY = tableTopY - 62;
+    let rowY = tableTopY - 52;
     printableLineItems.forEach((item) => {
       const quantity = parseMoney(item.quantity);
       const rate = parseMoney(item.rate);
       const amount = quantity * rate;
-      currentPage.push(`0.88 0.93 0.98 RG 0.8 w ${leftMargin + 10} ${rowY - 6} ${tableWidth - 20} ${rowHeight} re S`);
-      addText(item.description || "Item", colX.desc, rowY + 8, 10);
-      addText(String(quantity || 0), colX.qty, rowY + 8, 10);
-      addText(moneyLabel(String(rate)), colX.rate, rowY + 8, 10);
-      addText(moneyLabel(String(amount)), colX.amount, rowY + 8, 10, "F2");
+      currentPage.push(`0.84 0.87 0.92 RG 0.7 w ${leftMargin} ${rowY - 8} ${tableWidth} ${rowHeight} re S`);
+      addText(item.description || "Item", colX.desc, rowY + 6, 10);
+      addText(String(quantity || 0), colX.qty, rowY + 6, 10);
+      addText(moneyLabel(String(rate)), colX.rate, rowY + 6, 10);
+      addText(moneyLabel(String(amount)), colX.amount, rowY + 6, 10, "F2");
       rowY -= rowHeight;
     });
 
     const totalAmount = calculateLineItemTotal(printableLineItems);
-    addText(`Grand Total: ${moneyLabel(String(totalAmount))}`, leftMargin + tableWidth - 160, rowY - 8, 11, "F2", "0.08 0.56 0.78");
-    y = rowY - 24;
+    addText(`Grand Total: ${moneyLabel(String(totalAmount))}`, leftMargin + tableWidth - 172, rowY - 6, 11, "F2", brandColor);
+    y = rowY - 22;
   }
 
   ensureSpace(86);
-  currentPage.push(`0.93 0.97 1 rg ${leftMargin} ${y - 42} ${pageWidth - leftMargin * 2} 62 re f`);
-  currentPage.push(`0.88 0.93 0.98 RG 1 w ${leftMargin} ${y - 42} ${pageWidth - leftMargin * 2} 62 re S`);
-  addText("Authorized Signature", leftMargin + 14, y - 14, 11, "F2");
-  currentPage.push(`0.70 0.78 0.88 RG 1 w ${leftMargin + 14} ${y - 32} 180 0 re S`);
-  addText("Client Acceptance / Signature", pageWidth - leftMargin - 180, y - 14, 11, "F2");
-  currentPage.push(`0.70 0.78 0.88 RG 1 w ${pageWidth - leftMargin - 180} ${y - 32} 166 0 re S`);
+  addText("Authorized Signature", leftMargin, y - 10, 11, "F2", brandColor);
+  currentPage.push(`0.68 0.72 0.78 RG 1 w ${leftMargin} ${y - 28} 180 0 re S`);
+  addText("Client Acceptance / Signature", pageWidth - leftMargin - 170, y - 10, 11, "F2", brandColor);
+  currentPage.push(`0.68 0.72 0.78 RG 1 w ${pageWidth - leftMargin - 170} ${y - 28} 170 0 re S`);
 
   const objects: string[] = [];
   const contentObjectIds: number[] = [];

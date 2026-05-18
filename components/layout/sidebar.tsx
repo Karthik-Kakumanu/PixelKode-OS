@@ -144,6 +144,7 @@ function SidebarGroups({
                 <Link
                   key={`${groupTitle}-${item.label}`}
                   href={item.href}
+                  prefetch
                   onClick={onNavigate}
                   className={cn(
                     "group relative flex rounded-2xl transition-all duration-200",

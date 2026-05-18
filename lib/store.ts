@@ -14,11 +14,15 @@ interface BusinessStore {
   readAlertIds: string[];
   backups: BackupSnapshot[];
   theme: "light" | "dark";
+  serverVersion: number | null;
+  lastSyncedAt: string | null;
   isLoaded: boolean;
   isSaving: boolean;
   error: string;
   loadSheets: () => Promise<void>;
   syncPendingChanges: () => Promise<void>;
+  refreshFromServer: (options?: { force?: boolean }) => Promise<void>;
+  hydrateFromLocalCache: () => void;
   refreshBackups: () => void;
   createRestorePoint: (label?: string) => void;
   restoreBackup: (backupId: string) => void;
@@ -27,7 +31,13 @@ interface BusinessStore {
   addRowWithValues: (sheet: SheetKey, values: Record<string, CellValue>, keepUnspecifiedEmpty?: boolean) => void;
   deleteRow: (sheet: SheetKey, rowIndex: number) => void;
   moveRow: (sheet: SheetKey, fromIndex: number, toIndex: number) => void;
-  updateCell: (sheet: SheetKey, rowIndex: number, columnId: string, value: CellValue) => void;
+  updateCell: (
+    sheet: SheetKey,
+    rowIndex: number,
+    columnId: string,
+    value: CellValue,
+    options?: { suppressProjectReceiptLog?: boolean }
+  ) => void;
   addColumn: (sheet: SheetKey, column: SheetColumn) => void;
   deleteColumn: (sheet: SheetKey, columnId: string) => void;
   moveColumn: (sheet: SheetKey, columnId: string, direction: "left" | "right") => void;
@@ -40,6 +50,9 @@ interface BusinessStore {
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let queuedSheets: Record<SheetKey, SheetData> | null = null;
 let activeSaveRequest = 0;
+let remoteRefreshInFlight: Promise<void> | null = null;
+let realtimeSyncInterval: ReturnType<typeof setInterval> | null = null;
+let storageSyncInitialized = false;
 
 const PROJECT_REVENUE_SYNC_SOURCE = "project_income_sync";
 const PROJECT_VALUE_SYNC_SOURCE = "project_value_sync";
@@ -49,6 +62,8 @@ const LOCAL_PENDING_KEY = "pixelkode_os_pending_sheets";
 const LOCAL_READ_ALERTS_KEY = "pixelkode_os_read_alert_ids";
 const LOCAL_THEME_KEY = "pixelkode_os_theme";
 const LOCAL_TIMETABLE_ROLLOVER_KEY = "pixelkode_os_timetable_rollover_date";
+const REMOTE_SYNC_INTERVAL_MS = 5000;
+const LOCAL_SAVE_DEBOUNCE_MS = 350;
 const rowIdPrefixes: Record<SheetKey, string> = {
   projects: "project",
   leads: "lead",
@@ -63,6 +78,12 @@ const rowIdPrefixes: Record<SheetKey, string> = {
 };
 
 let alertRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+type BusinessStatePayload = {
+  sheets?: Record<SheetKey, SheetData>;
+  version?: number;
+  updatedAt?: string | null;
+};
 
 function canUseStorage() {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
@@ -284,13 +305,29 @@ function normalizeLeadRow(row: SheetRow): SheetRow {
   const callStatus = String(row.callStatus ?? "").trim() || "Not Called";
   const leadStatus = String(row.leadStatus ?? "").trim() || "Fresh";
   const followUpDate = String(row.followUpDate ?? "").trim();
+  const mobileNumber = String(row.mobileNumber ?? "").trim();
 
   return {
     ...row,
     callStatus,
     leadStatus,
+    mobileNumber,
     followUpDate: followUpDate || (leadStatus === "Fresh" && callStatus === "Not Called" ? getUpcomingSaturdayDateKey() : "")
   };
+}
+
+function normalizePhoneNumber(value: unknown) {
+  return String(value ?? "").replace(/\D+/g, "");
+}
+
+function findDuplicateLeadPhoneIndex(rows: SheetRow[], mobileNumber: unknown, excludeRowIndex?: number) {
+  const normalizedTarget = normalizePhoneNumber(mobileNumber);
+  if (!normalizedTarget) return -1;
+
+  return rows.findIndex((row, index) => {
+    if (excludeRowIndex != null && index === excludeRowIndex) return false;
+    return normalizePhoneNumber(row.mobileNumber) === normalizedTarget;
+  });
 }
 
 function createProjectFromLead(lead: SheetRow): SheetRow {
@@ -434,6 +471,62 @@ function buildSyncedRevenueRows(projectsSheet: SheetData) {
   ] as SheetRow[];
 }
 
+function appendProjectReceiptDeltaRow(
+  sheets: Record<SheetKey, SheetData>,
+  previousProjectRow: SheetRow | null | undefined,
+  nextProjectRow: SheetRow | null | undefined
+) {
+  if (!previousProjectRow || !nextProjectRow) {
+    return sheets;
+  }
+
+  const previousProjectValue = clampNumber(previousProjectRow.projectValue);
+  const nextProjectValue = clampNumber(nextProjectRow.projectValue);
+  const previousAmountReceived = clampNumber(previousProjectRow.amountReceived, 0, previousProjectValue);
+  const nextAmountReceived = clampNumber(nextProjectRow.amountReceived, 0, nextProjectValue);
+  const receivedDelta = nextAmountReceived - previousAmountReceived;
+
+  if (!Number.isFinite(receivedDelta) || receivedDelta <= 0) {
+    return sheets;
+  }
+
+  const revenueSheet = sheets.revenue;
+  if (!revenueSheet) {
+    return sheets;
+  }
+
+  const today = formatLocalDateKey(new Date());
+  const projectName = String(nextProjectRow.projectName ?? previousProjectRow.projectName ?? "Project").trim() || "Project";
+  const projectId = String(nextProjectRow.id ?? previousProjectRow.id ?? "").trim();
+  const clientName = String(nextProjectRow.clientName ?? previousProjectRow.clientName ?? "").trim();
+  const sector = String(nextProjectRow.sector ?? previousProjectRow.sector ?? "").trim();
+
+  return {
+    ...sheets,
+    revenue: {
+      ...revenueSheet,
+      rows: [
+        ...revenueSheet.rows,
+        {
+          id: createRowId(rowIdPrefixes.revenue),
+          entryDate: today,
+          entryType: "Income",
+          sourceName: projectName,
+          sector: sector || "Projects",
+          category: "Project Receipt",
+          amount: receivedDelta,
+          paymentMode: "Project Update",
+          remarks: clientName
+            ? `Auto-logged from project amount received update for ${clientName}`
+            : "Auto-logged from project amount received update",
+          linkedProjectId: projectId,
+          syncSource: "project_receipt_delta"
+        }
+      ]
+    }
+  };
+}
+
 function syncRevenueFromProjects(sheets: Record<SheetKey, SheetData>) {
   const syncedSheets = syncProjectSheet(applyLeadAutomation(sheets));
   const projectsSheet = syncedSheets.projects;
@@ -478,7 +571,23 @@ function syncRevenueFromProjects(sheets: Record<SheetKey, SheetData>) {
   };
 }
 
-async function persistSheets(sheets: Record<SheetKey, SheetData>, set: (partial: Partial<BusinessStore>) => void) {
+async function fetchServerState() {
+  const response = await fetch("/api/business-state", {
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    throw new Error(`Load failed (${response.status})`);
+  }
+
+  return (await response.json()) as BusinessStatePayload;
+}
+
+async function persistSheets(
+  sheets: Record<SheetKey, SheetData>,
+  set: (partial: Partial<BusinessStore>) => void,
+  get: () => BusinessStore
+) {
   const requestId = ++activeSaveRequest;
   set({ isSaving: true, error: "" });
 
@@ -488,15 +597,21 @@ async function persistSheets(sheets: Record<SheetKey, SheetData>, set: (partial:
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ sheets })
+      body: JSON.stringify({ sheets, version: get().serverVersion })
     });
 
     if (!response.ok) {
       throw new Error(`Save failed (${response.status})`);
     }
 
+    const payload = (await response.json()) as BusinessStatePayload;
     writeStoredSheets(LOCAL_CACHE_KEY, sheets);
     clearStoredSheets(LOCAL_PENDING_KEY);
+    set({
+      serverVersion: typeof payload.version === "number" ? payload.version : get().serverVersion,
+      lastSyncedAt: payload.updatedAt ?? new Date().toISOString(),
+      error: ""
+    });
   } catch (error) {
     console.error(error);
     writeStoredSheets(LOCAL_CACHE_KEY, sheets);
@@ -509,7 +624,11 @@ async function persistSheets(sheets: Record<SheetKey, SheetData>, set: (partial:
   }
 }
 
-function queuePersist(sheets: Record<SheetKey, SheetData>, set: (partial: Partial<BusinessStore>) => void) {
+function queuePersist(
+  sheets: Record<SheetKey, SheetData>,
+  set: (partial: Partial<BusinessStore>) => void,
+  get: () => BusinessStore
+) {
   queuedSheets = sheets;
   set({ isSaving: true, error: "" });
 
@@ -535,8 +654,8 @@ function queuePersist(sheets: Record<SheetKey, SheetData>, set: (partial: Partia
       return;
     }
 
-    void persistSheets(nextSheets, set);
-  }, 1000);
+    void persistSheets(nextSheets, set, get);
+  }, LOCAL_SAVE_DEBOUNCE_MS);
 }
 
 function buildOperationalState(sheets: Record<SheetKey, SheetData>, readAlertIds: string[]) {
@@ -560,16 +679,141 @@ function ensureAllSheetsPresent(sheets: Record<SheetKey, SheetData> | null | und
   Object.keys(sheets).forEach((k) => {
     const sheetKey = k as SheetKey;
     const nextSheet = sheets[sheetKey];
+    const defaultSheet = defaults[sheetKey];
+    const mergedColumns = defaultSheet.columns.map((defaultColumn) => {
+      const existingColumn = nextSheet.columns.find((column) => column.id === defaultColumn.id);
+      return existingColumn ? { ...defaultColumn, ...existingColumn } : defaultColumn;
+    });
+    const extraColumns = nextSheet.columns.filter(
+      (column) => !defaultSheet.columns.some((defaultColumn) => defaultColumn.id === column.id)
+    );
+    const columns = [...mergedColumns, ...extraColumns];
+    const rowsWithMissingFields = ensureUniqueRowIds(nextSheet.rows, rowIdPrefixes[sheetKey]).map((row) => {
+      const nextRow = { ...row };
+      columns.forEach((column) => {
+        if (nextRow[column.id] === undefined) {
+          nextRow[column.id] = column.type === "number" ? 0 : "";
+        }
+      });
+      return nextRow;
+    });
 
     merged[sheetKey] = {
+      ...defaultSheet,
       ...nextSheet,
-      rows: ensureUniqueRowIds(nextSheet.rows, rowIdPrefixes[sheetKey])
+      columns,
+      rows: rowsWithMissingFields
     };
   });
 
   merged.timetable = normalizeTimetableSheet(merged.timetable);
 
   return merged;
+}
+
+function buildSheetsState(sheets: Record<SheetKey, SheetData>, readAlertIds: string[]) {
+  const mergedPayload = ensureAllSheetsPresent(sheets);
+  const rollover = applyTimetableRollover(mergedPayload);
+  const syncedSheets = syncRevenueFromProjects(rollover.sheets);
+  const nextState = buildOperationalState(syncedSheets, readAlertIds);
+  const backups = maybeCreateAutoBackup(nextState.sheets);
+
+  return {
+    ...nextState,
+    backups,
+    rolloverChanged: rollover.changed
+  };
+}
+
+function applySheetsSnapshot(
+  set: (partial: Partial<BusinessStore>) => void,
+  readAlertIds: string[],
+  sheets: Record<SheetKey, SheetData>,
+  metadata?: { version?: number | null; updatedAt?: string | null; error?: string }
+) {
+  const nextState = buildSheetsState(sheets, readAlertIds);
+
+  set({
+    sheets: nextState.sheets,
+    alerts: nextState.alerts,
+    readAlertIds: nextState.readAlertIds,
+    backups: nextState.backups,
+    serverVersion: metadata?.version ?? null,
+    lastSyncedAt: metadata?.updatedAt ?? null,
+    isLoaded: true,
+    error: metadata?.error ?? ""
+  });
+
+  writeStoredAlertIds(nextState.readAlertIds);
+  writeStoredSheets(LOCAL_CACHE_KEY, nextState.sheets);
+  if (nextState.rolloverChanged) {
+    writeStoredSheets(LOCAL_PENDING_KEY, nextState.sheets);
+  }
+}
+
+function ensureRealtimeSync(get: () => BusinessStore) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (!storageSyncInitialized) {
+    const handleStorage = (event: StorageEvent) => {
+      const store = useBusinessStore.getState();
+
+      if (event.key === LOCAL_THEME_KEY) {
+        useBusinessStore.setState({ theme: readStoredTheme() });
+        return;
+      }
+
+      if (event.key === LOCAL_READ_ALERTS_KEY) {
+        const nextReadAlertIds = readStoredAlertIds();
+        useBusinessStore.setState({ readAlertIds: nextReadAlertIds });
+        return;
+      }
+
+      if (event.key !== LOCAL_CACHE_KEY && event.key !== LOCAL_PENDING_KEY) {
+        return;
+      }
+
+      if (!store.isLoaded || store.isSaving) {
+        return;
+      }
+
+      if (readStoredSheets(LOCAL_PENDING_KEY)) {
+        return;
+      }
+
+      store.hydrateFromLocalCache();
+    };
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === "hidden") {
+        return;
+      }
+
+      void useBusinessStore.getState().refreshFromServer();
+    };
+
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener("focus", handleVisibilityOrFocus);
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+    storageSyncInitialized = true;
+  }
+
+  if (!realtimeSyncInterval) {
+    realtimeSyncInterval = setInterval(() => {
+      if (document.visibilityState === "hidden") {
+        return;
+      }
+
+      const store = get();
+      if (!store.isLoaded || store.isSaving) {
+        return;
+      }
+
+      void store.refreshFromServer();
+    }, REMOTE_SYNC_INTERVAL_MS);
+  }
 }
 
 function getNextPlannerRefreshDelay() {
@@ -607,7 +851,7 @@ function scheduleAlertRefresh(get: () => BusinessStore, set: (partial: Partial<B
     writeStoredSheets(LOCAL_CACHE_KEY, nextState.sheets);
     if (rollover.changed) {
       writeStoredSheets(LOCAL_PENDING_KEY, nextState.sheets);
-      queuePersist(nextState.sheets, set);
+      queuePersist(nextState.sheets, set, get);
     }
     writeStoredAlertIds(nextState.readAlertIds);
     scheduleAlertRefresh(get, set);
@@ -618,8 +862,10 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
   sheets: createDefaultSheets(),
   alerts: deriveOperationalAlerts(createDefaultSheets()),
   readAlertIds: readStoredAlertIds(),
-  backups: readBackups(),
+  backups: [],
   theme: readStoredTheme(),
+  serverVersion: null,
+  lastSyncedAt: null,
   isLoaded: false,
   isSaving: false,
   error: "",
@@ -631,33 +877,21 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     const localSheets = pendingSheets ?? cachedSheets;
 
     if (localSheets) {
-      const mergedLocal = ensureAllSheetsPresent(localSheets);
-      const rollover = applyTimetableRollover(mergedLocal);
-      const syncedLocalSheets = syncRevenueFromProjects(rollover.sheets);
-      const localState = buildOperationalState(syncedLocalSheets, get().readAlertIds);
-      const backups = maybeCreateAutoBackup(localState.sheets);
-
-      set({
-        sheets: localState.sheets,
-        alerts: localState.alerts,
-        readAlertIds: localState.readAlertIds,
-        backups,
-        isLoaded: true,
+      applySheetsSnapshot(set, get().readAlertIds, localSheets, {
+        version: get().serverVersion,
+        updatedAt: get().lastSyncedAt,
         error: pendingSheets ? "Offline changes are waiting to sync." : ""
       });
-
-      writeStoredAlertIds(localState.readAlertIds);
-      writeStoredSheets(LOCAL_CACHE_KEY, localState.sheets);
-      if (rollover.changed) {
-        writeStoredSheets(LOCAL_PENDING_KEY, localState.sheets);
-      }
       scheduleAlertRefresh(get, set);
+      ensureRealtimeSync(get);
     }
 
     if (typeof navigator !== "undefined" && !navigator.onLine) {
       if (!localSheets) {
         set({
           sheets: createDefaultSheets(),
+          serverVersion: null,
+          lastSyncedAt: null,
           isLoaded: true,
           error: "Offline and no local cache found yet."
         });
@@ -667,43 +901,24 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
 
     try {
       if (pendingSheets) {
-        await persistSheets(syncRevenueFromProjects(ensureAllSheetsPresent(pendingSheets)), set);
+        await persistSheets(syncRevenueFromProjects(ensureAllSheetsPresent(pendingSheets)), set, get);
       }
 
-      const response = await fetch("/api/business-state", {
-        cache: "no-store"
-      });
-
-      if (!response.ok) {
-        throw new Error(`Load failed (${response.status})`);
-      }
-
-      const payload = (await response.json()) as { sheets?: Record<SheetKey, SheetData> };
-      const mergedPayload = ensureAllSheetsPresent(payload.sheets ?? createDefaultSheets());
-      const rollover = applyTimetableRollover(mergedPayload);
-      const syncedSheets = syncRevenueFromProjects(rollover.sheets);
-      const nextState = buildOperationalState(syncedSheets, get().readAlertIds);
-      const backups = maybeCreateAutoBackup(nextState.sheets);
-
-      set({
-        sheets: nextState.sheets,
-        alerts: nextState.alerts,
-        readAlertIds: nextState.readAlertIds,
-        backups,
-        isLoaded: true,
+      const payload = await fetchServerState();
+      applySheetsSnapshot(set, get().readAlertIds, payload.sheets ?? createDefaultSheets(), {
+        version: typeof payload.version === "number" ? payload.version : null,
+        updatedAt: payload.updatedAt ?? null,
         error: ""
       });
-      writeStoredSheets(LOCAL_CACHE_KEY, nextState.sheets);
-      if (rollover.changed) {
-        writeStoredSheets(LOCAL_PENDING_KEY, nextState.sheets);
-      }
-      writeStoredAlertIds(nextState.readAlertIds);
       scheduleAlertRefresh(get, set);
+      ensureRealtimeSync(get);
     } catch (error) {
       console.error(error);
       if (!localSheets) {
         set({
           sheets: createDefaultSheets(),
+          serverVersion: null,
+          lastSyncedAt: null,
           isLoaded: true,
           error: "Railway data could not be loaded and no local cache was found."
         });
@@ -728,7 +943,62 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
       return;
     }
 
-    await persistSheets(syncRevenueFromProjects(pendingSheets), set);
+    await persistSheets(syncRevenueFromProjects(pendingSheets), set, get);
+  },
+  refreshFromServer: async (options) => {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      return;
+    }
+
+    if (readStoredSheets(LOCAL_PENDING_KEY) && !options?.force) {
+      return;
+    }
+
+    if (remoteRefreshInFlight) {
+      return remoteRefreshInFlight;
+    }
+
+    remoteRefreshInFlight = (async () => {
+      try {
+        const payload = await fetchServerState();
+        const nextVersion = typeof payload.version === "number" ? payload.version : null;
+        const currentVersion = get().serverVersion;
+
+        if (!options?.force && nextVersion !== null && currentVersion !== null && nextVersion <= currentVersion) {
+          if (payload.updatedAt && payload.updatedAt !== get().lastSyncedAt) {
+            set({ lastSyncedAt: payload.updatedAt });
+          }
+          return;
+        }
+
+        applySheetsSnapshot(set, get().readAlertIds, payload.sheets ?? createDefaultSheets(), {
+          version: nextVersion,
+          updatedAt: payload.updatedAt ?? null,
+          error: readStoredSheets(LOCAL_PENDING_KEY) ? "Offline changes are waiting to sync." : ""
+        });
+      } catch (error) {
+        console.error("Background refresh failed", error);
+      } finally {
+        remoteRefreshInFlight = null;
+      }
+    })();
+
+    return remoteRefreshInFlight;
+  },
+  hydrateFromLocalCache: () => {
+    const pendingSheets = readStoredSheets(LOCAL_PENDING_KEY);
+    const cachedSheets = readStoredSheets(LOCAL_CACHE_KEY);
+    const localSheets = pendingSheets ?? cachedSheets;
+
+    if (!localSheets) {
+      return;
+    }
+
+    applySheetsSnapshot(set, get().readAlertIds, localSheets, {
+      version: get().serverVersion,
+      updatedAt: get().lastSyncedAt,
+      error: pendingSheets ? "Offline changes are waiting to sync." : ""
+    });
   },
   refreshBackups: () => {
     set({ backups: readBackups() });
@@ -757,7 +1027,7 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     writeStoredSheets(LOCAL_CACHE_KEY, nextState.sheets);
     writeStoredSheets(LOCAL_PENDING_KEY, nextState.sheets);
     writeStoredAlertIds(nextState.readAlertIds);
-    queuePersist(nextState.sheets, set);
+    queuePersist(nextState.sheets, set, get);
   },
   addRow: (sheet) => {
     const current = get().sheets[sheet];
@@ -773,10 +1043,17 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     const backups = maybeCreateAutoBackup(sheets);
 
     set({ ...nextState, backups });
-    queuePersist(sheets, set);
+    queuePersist(sheets, set, get);
   },
   addRowWithValues: (sheet, values, keepUnspecifiedEmpty = false) => {
     const current = get().sheets[sheet];
+    if (sheet === "leads") {
+      const duplicateIndex = findDuplicateLeadPhoneIndex(current.rows, values.mobileNumber);
+      if (duplicateIndex >= 0) {
+        set({ error: "This mobile number already exists in Leads. Duplicate lead entries are not allowed." });
+        return;
+      }
+    }
     const nextRow = {
       ...(keepUnspecifiedEmpty
         ? makeAssistantRow(current.columns, rowIdPrefixes[sheet], current.rows.length)
@@ -795,7 +1072,7 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     const backups = maybeCreateAutoBackup(sheets);
 
     set({ ...nextState, backups });
-    queuePersist(sheets, set);
+    queuePersist(sheets, set, get);
   },
   deleteRow: (sheet, rowIndex) => {
     const current = get().sheets[sheet];
@@ -812,24 +1089,38 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     const backups = maybeCreateAutoBackup(sheets);
 
     set({ ...nextState, backups });
-    queuePersist(sheets, set);
+    queuePersist(sheets, set, get);
   },
-  updateCell: (sheet, rowIndex, columnId, value) => {
+  updateCell: (sheet, rowIndex, columnId, value, options) => {
     const current = get().sheets[sheet];
+    if (sheet === "leads" && columnId === "mobileNumber") {
+      const duplicateIndex = findDuplicateLeadPhoneIndex(current.rows, value, rowIndex);
+      if (duplicateIndex >= 0) {
+        set({ error: "This mobile number is already used in another lead. Please enter a unique number." });
+        return;
+      }
+    }
+    const previousRow = current.rows[rowIndex] ?? null;
     const rows = current.rows.map((row, index) => (index === rowIndex ? { ...row, [columnId]: value } : row));
-    const nextSheets = {
+    let nextSheets = {
       ...get().sheets,
       [sheet]: {
         ...current,
         rows
       }
     };
+    const nextRow = rows[rowIndex] ?? null;
+
+    if (sheet === "projects" && columnId === "amountReceived" && !options?.suppressProjectReceiptLog) {
+      nextSheets = appendProjectReceiptDeltaRow(nextSheets, previousRow, nextRow);
+    }
+
     const sheets = syncRevenueFromProjects(nextSheets);
     const nextState = buildOperationalState(sheets, get().readAlertIds);
     const backups = maybeCreateAutoBackup(sheets);
 
     set({ ...nextState, backups });
-    queuePersist(sheets, set);
+    queuePersist(sheets, set, get);
   },
   moveRow: (sheet, fromIndex, toIndex) => {
     const current = get().sheets[sheet];
@@ -853,7 +1144,7 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     const backups = maybeCreateAutoBackup(sheets);
 
     set({ ...nextState, backups });
-    queuePersist(sheets, set);
+    queuePersist(sheets, set, get);
   },
   addColumn: (sheet, column) => {
     const current = get().sheets[sheet];
@@ -873,7 +1164,7 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     const backups = maybeCreateAutoBackup(sheets);
 
     set({ ...nextState, backups });
-    queuePersist(sheets, set);
+    queuePersist(sheets, set, get);
   },
   deleteColumn: (sheet, columnId) => {
     const current = get().sheets[sheet];
@@ -901,7 +1192,7 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     const backups = maybeCreateAutoBackup(sheets);
 
     set({ ...nextState, backups });
-    queuePersist(sheets, set);
+    queuePersist(sheets, set, get);
   },
   moveColumn: (sheet, columnId, direction) => {
     const current = get().sheets[sheet];
@@ -932,7 +1223,7 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     const backups = maybeCreateAutoBackup(sheets);
 
     set({ ...nextState, backups });
-    queuePersist(sheets, set);
+    queuePersist(sheets, set, get);
   },
   updateColumnWidth: (sheet, columnId, width) => {
     const current = get().sheets[sheet];
@@ -953,7 +1244,7 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     const backups = maybeCreateAutoBackup(sheets);
 
     set({ ...nextState, backups });
-    queuePersist(sheets, set);
+    queuePersist(sheets, set, get);
   },
   addColumnOption: (sheet, columnId, option) => {
     const normalizedOption = option.trim();
@@ -995,7 +1286,7 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
     const backups = maybeCreateAutoBackup(sheets);
 
     set({ ...nextState, backups });
-    queuePersist(sheets, set);
+    queuePersist(sheets, set, get);
   },
   setTheme: (theme) => {
     const nextTheme = theme === "dark" ? "dark" : "light";

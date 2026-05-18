@@ -105,11 +105,93 @@ function extractOpenRouterOutputText(payload: unknown) {
   return "";
 }
 
-async function requestGeminiReply(config: Extract<AIProviderConfig, { provider: "Gemini" }>, payload: {
-  systemPrompt: string;
+function shouldUseWorkspaceContext(prompt: string, currentSheetKey?: SheetKey, pathname?: string) {
+  if (currentSheetKey) return true;
+
+  const lower = prompt.toLowerCase();
+  const casualPatterns = [
+    /^(hi|hello|hey|yo)\b/,
+    /\bhow are you\b/,
+    /\bwhat are you (doing|up to)\b/,
+    /\bwho are you\b/,
+    /\bcan we chat\b/,
+    /\btell me a joke\b/,
+    /\bthank(s| you)\b/,
+    /\bok(ay)?\b/,
+    /\bwhat's up\b/,
+    /\bwyd\b/
+  ];
+
+  if (casualPatterns.some((pattern) => pattern.test(lower))) {
+    return false;
+  }
+
+  const workspaceKeywords = [
+    "project",
+    "lead",
+    "revenue",
+    "payment",
+    "client",
+    "sheet",
+    "dashboard",
+    "business",
+    "meeting",
+    "timetable",
+    "service",
+    "team",
+    "shopping",
+    "server",
+    "database",
+    "profit",
+    "cash",
+    "task",
+    "status",
+    "report",
+    "summary",
+    "analyze",
+    "analysis",
+    "metric",
+    "number",
+    "finance",
+    "financial",
+    "follow up",
+    "follow-up",
+    "pipeline",
+    "content"
+  ];
+
+  if (workspaceKeywords.some((keyword) => lower.includes(keyword))) {
+    return true;
+  }
+
+  return pathname ? !pathname.startsWith("/documents") : false;
+}
+
+function buildUserPrompt(payload: {
+  prompt: string;
   currentScope: string;
   workspaceContext: unknown;
-  prompt: string;
+  includeWorkspaceContext: boolean;
+}) {
+  if (!payload.includeWorkspaceContext) {
+    return [
+      payload.currentScope,
+      "Respond naturally. Only mention workspace data if it is clearly useful for this request.",
+      `User request: ${payload.prompt}`
+    ].join("\n\n");
+  }
+
+  return [
+    payload.currentScope,
+    "Use this workspace context when it is relevant to the answer:",
+    JSON.stringify(payload.workspaceContext),
+    `User request: ${payload.prompt}`
+  ].join("\n\n");
+}
+
+async function requestGeminiReply(config: Extract<AIProviderConfig, { provider: "Gemini" }>, payload: {
+  systemPrompt: string;
+  userPrompt: string;
   recentMessages: Array<{ role: "model" | "user"; parts: Array<{ text: string }> }>;
 }) {
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${encodeURIComponent(config.apiKey)}`, {
@@ -127,12 +209,7 @@ async function requestGeminiReply(config: Extract<AIProviderConfig, { provider: 
           role: "user",
           parts: [
             {
-              text: [
-                payload.currentScope,
-                "Use this workspace context for your answer:",
-                JSON.stringify(payload.workspaceContext),
-                `User request: ${payload.prompt}`
-              ].join("\n\n")
+              text: payload.userPrompt
             }
           ]
         }
@@ -160,9 +237,7 @@ async function requestGeminiReply(config: Extract<AIProviderConfig, { provider: 
 
 async function requestOpenRouterReply(config: Extract<AIProviderConfig, { provider: "OpenRouter" }>, payload: {
   systemPrompt: string;
-  currentScope: string;
-  workspaceContext: unknown;
-  prompt: string;
+  userPrompt: string;
   recentMessages: ChatMessageInput[];
 }) {
   const response = await fetch(`${config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
@@ -188,12 +263,7 @@ async function requestOpenRouterReply(config: Extract<AIProviderConfig, { provid
         })),
         {
           role: "user",
-          content: [
-            payload.currentScope,
-            "Use this workspace context for your answer:",
-            JSON.stringify(payload.workspaceContext),
-            `User request: ${payload.prompt}`
-          ].join("\n\n")
+          content: payload.userPrompt
         }
       ]
     }),
@@ -244,13 +314,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Prompt is required." }, { status: 400 });
     }
 
-    const sheets = await getBusinessState();
-    const workspaceContext = buildAIWorkspaceContext(sheets, body.meetHistory ?? []);
+    const state = await getBusinessState();
+    const workspaceContext = buildAIWorkspaceContext(state.sheets, body.meetHistory ?? []);
     const currentScope = body.currentSheetKey
       ? `Current sheet focus: ${body.currentSheetKey}.`
       : body.pathname
         ? `Current path: ${body.pathname}.`
         : "Current scope: full workspace.";
+    const includeWorkspaceContext = shouldUseWorkspaceContext(prompt, body.currentSheetKey, body.pathname);
+    const userPrompt = buildUserPrompt({
+      prompt,
+      currentScope,
+      workspaceContext,
+      includeWorkspaceContext
+    });
 
     const recentMessages: Array<{ role: "model" | "user"; parts: Array<{ text: string }> }> = (body.messages ?? [])
       .filter((message) => message?.content?.trim())
@@ -264,16 +341,12 @@ export async function POST(request: Request) {
       aiConfig.provider === "OpenRouter"
         ? await requestOpenRouterReply(aiConfig, {
           systemPrompt,
-          currentScope,
-          workspaceContext,
-          prompt,
+          userPrompt,
           recentMessages: (body.messages ?? []).filter((message) => message?.content?.trim()).slice(-8)
         })
         : await requestGeminiReply(aiConfig, {
           systemPrompt,
-          currentScope,
-          workspaceContext,
-          prompt,
+          userPrompt,
           recentMessages
         });
 

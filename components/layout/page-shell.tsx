@@ -34,7 +34,7 @@ export function PageShell({
         <MobileNav />
 
         <main className="min-h-0 min-w-0 flex-1" suppressHydrationWarning>
-          <div className="glass-panel flex h-full overflow-hidden rounded-[32px] border-white/55 px-4 py-4 lg:px-5 lg:py-5 dark:border-white/10">
+          <div className="glass-panel flex h-full overflow-hidden rounded-[32px] border-white/55 px-4 py-4 lg:px-5 lg:py-5 dark:border-white/10 dark:bg-slate-950/98">
             <div className="mx-auto flex h-full w-full max-w-[1720px] min-w-0 flex-col">{children}</div>
           </div>
         </main>

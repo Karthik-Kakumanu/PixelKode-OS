@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, CheckCircle2, ChevronDown, Command, LoaderCircle, LogOut, Menu, Mic, Moon, Plus, Search, Sun, WifiOff } from "lucide-react";
+import { Bell, CheckCircle2, ChevronDown, LoaderCircle, LogOut, Menu, Mic, Moon, Plus, Sun, WifiOff } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -9,10 +9,11 @@ import { Button } from "@/components/ui/button";
 import { getRouteMeta, primaryRoutes } from "@/lib/navigation";
 import { useBusinessStore } from "@/lib/store";
 
-const quickActions: ReadonlyArray<{ label: string; href: string; prompt?: string }> = [
-  { label: "New lead", href: "/leads" },
-  { label: "New project", href: "/projects" },
-  { label: "New invoice", href: "/revenue", prompt: "Add revenue entry" }
+const quickActions: ReadonlyArray<{ label: string; href: string }> = [
+  { label: "Leads", href: "/leads" },
+  { label: "Projects", href: "/projects" },
+  { label: "Revenue", href: "/revenue" },
+  { label: "Documents", href: "/documents" }
 ];
 
 export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
@@ -74,6 +75,12 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, []);
 
+  useEffect(() => {
+    primaryRoutes.forEach((route) => {
+      router.prefetch(route.href);
+    });
+  }, [router]);
+
   const unreadAlerts = useMemo(
     () => alerts.filter((alert) => !readAlertIds.includes(alert.id)),
     [alerts, readAlertIds]
@@ -106,7 +113,7 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
 
     return {
       label: "Syncing state",
-      tone: "border-slate-200 bg-white text-slate-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300",
+      tone: "border-slate-200 bg-white text-slate-600 dark:border-white/10 dark:bg-slate-950/76 dark:text-zinc-300",
       icon: LoaderCircle
     };
   }, [error, isLoaded, isOnline, isSaving]);
@@ -120,14 +127,6 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
         code: "KeyK",
         ctrlKey: true,
         bubbles: true
-      })
-    );
-  };
-
-  const openAssistant = (prompt?: string, run = false) => {
-    window.dispatchEvent(
-      new CustomEvent("ops-assistant:prompt", {
-        detail: { prompt: prompt ?? "", run }
       })
     );
   };
@@ -165,6 +164,7 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
                   <button
                     key={route.href}
                     type="button"
+                    onMouseEnter={() => router.prefetch(route.href)}
                     onClick={() => {
                       router.push(route.href);
                       setPageMenuOpen(false);
@@ -183,27 +183,7 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
           </div>
         </div>
 
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <button
-            type="button"
-            onClick={openPalette}
-            className="flex min-h-[52px] min-w-0 flex-1 items-center justify-between rounded-2xl border border-white/60 bg-white/65 px-4 shadow-sm backdrop-blur-md transition hover:bg-white/80 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10"
-            aria-label="Open AI global search"
-          >
-            <span className="flex min-w-0 items-center gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-700 dark:text-cyan-300">
-                <Search className="h-4 w-4" />
-              </span>
-              <span className="min-w-0 text-left">
-                <span className="block truncate text-sm font-semibold text-slate-950 dark:text-white">Search data, ask AI, run commands</span>
-                <span className="block truncate text-xs text-slate-500 dark:text-zinc-400">{currentRoute.description}</span>
-              </span>
-            </span>
-            <span className="hidden items-center gap-1 rounded-xl border border-white/70 bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-slate-500 lg:flex dark:border-white/10 dark:bg-white/5 dark:text-zinc-400">
-              <Command className="h-3 w-3" /> K
-            </span>
-          </button>
-
+        <div className="flex flex-1 items-center justify-end gap-3">
           <div className={`hidden items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-semibold xl:flex ${syncState.tone}`}>
             <SyncIcon className={`h-3.5 w-3.5 ${syncState.label === "Saving..." ? "animate-spin" : ""}`} />
             {syncState.label}
@@ -216,13 +196,11 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
               <button
                 key={action.label}
                 type="button"
+                onMouseEnter={() => router.prefetch(action.href)}
                 onClick={() => {
                   router.push(action.href);
                   setPageMenuOpen(false);
                   setNotificationsOpen(false);
-                  if (action.prompt) {
-                    openAssistant(action.prompt, false);
-                  }
                 }}
                 className="rounded-2xl border border-white/60 bg-white/60 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur-md transition hover:bg-white/80 dark:border-white/10 dark:bg-white/5 dark:text-zinc-200 dark:hover:bg-white/10"
               >

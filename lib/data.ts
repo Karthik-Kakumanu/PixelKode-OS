@@ -339,6 +339,7 @@ export const defaultSheets: Record<SheetKey, SheetData> = {
     columns: [
       { id: "businessName", label: "Business Name", type: "text", width: "180px" },
       { id: "contactName", label: "Contact Name", type: "text", width: "150px" },
+      { id: "mobileNumber", label: "Mobile Number", type: "text", width: "150px" },
       { id: "category", label: "Category", type: "text", width: "130px" },
       {
         id: "servicePitch",

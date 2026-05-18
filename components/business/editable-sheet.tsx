@@ -12,7 +12,6 @@ import {
   LayoutGrid,
   ListFilter,
   Plus,
-  Search,
   SlidersHorizontal,
   Trash2
 } from "lucide-react";
@@ -446,7 +445,6 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
   const [newColumnLabel, setNewColumnLabel] = useState("");
   const [newColumnType, setNewColumnType] = useState<ColumnType>("text");
   const [newColumnOptions, setNewColumnOptions] = useState("");
-  const [search, setSearch] = useState("");
   const [filterColumnId, setFilterColumnId] = useState("all");
   const [filterValue, setFilterValue] = useState("all");
   const [quickViewId, setQuickViewId] = useState("all");
@@ -567,19 +565,15 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
   }, [isMounted, sheet.columns, sheetKey]);
 
   const filteredRows = useMemo(() => {
-    const query = search.trim().toLowerCase();
     const rows = sheet?.rows ?? [];
-    const columns = sheet?.columns ?? [];
 
     return rows.filter((row) => {
       const quickView = quickViews.find((item) => item.id === quickViewId);
-      const matchesQuery = query.length === 0 || columns.some((column) => String(row[column.id] ?? "").toLowerCase().includes(query));
-      if (!matchesQuery) return false;
       if (quickView && !quickView.matches(row)) return false;
       if (filterColumnId === "all" || filterValue === "all") return true;
       return String(row[filterColumnId] ?? "") === filterValue;
     });
-  }, [filterColumnId, filterValue, quickViewId, quickViews, search, sheet]);
+  }, [filterColumnId, filterValue, quickViewId, quickViews, sheet]);
 
   const activeFilterOptions = useMemo(() => {
     if (filterColumnId === "all") return [];
@@ -701,37 +695,30 @@ export function EditableSheet({ sheetKey }: { sheetKey: SheetKey }) {
           {error ? <p className="rounded-2xl bg-rose-50 dark:bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20">{error}</p> : null}
 
           <div className="rounded-[26px] border border-slate-200 dark:border-white/10 bg-white/90 dark:bg-zinc-900 p-4 shadow-sm space-y-3 backdrop-blur-md">
-            {/* Row 1: Quick views + Search */}
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {quickViews.map((view) => (
+                <button
+                  key={view.id}
+                  type="button"
+                  onClick={() => setQuickViewId(view.id)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                    quickViewId === view.id
+                      ? "border-slate-800 bg-slate-800 text-white dark:border-white dark:bg-white dark:text-black"
+                      : "border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-200 dark:border-white/10 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-white"
+                  }`}
+                >
+                  {view.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Row 2: Filters + Sort */}
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
               <div className="flex flex-wrap items-center gap-1.5">
-                {quickViews.map((view) => (
-                  <button
-                    key={view.id}
-                    type="button"
-                    onClick={() => setQuickViewId(view.id)}
-                    className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                      quickViewId === view.id
-                        ? "border-slate-800 bg-slate-800 text-white dark:border-white dark:bg-white dark:text-black"
-                        : "border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-200 dark:border-white/10 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-white"
-                    }`}
-                  >
-                    {view.label}
-                  </button>
-                ))}
-              </div>
-              
-              <div className="relative w-full lg:w-72">
-                <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
-                <Input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  className="h-10 w-full rounded-2xl border border-slate-200 dark:border-white/10 bg-white/90 dark:bg-zinc-900 pl-11 pr-4 text-sm text-slate-800 dark:text-zinc-200 dark:placeholder-zinc-500"
-                  placeholder="Search rows, names, values, notes..."
-                />
+                <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-zinc-400">Filters</span>
               </div>
             </div>
-            
-            {/* Row 2: Filters + Sort */}
+
             <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
               <div className="relative">
                 <ListFilter className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />

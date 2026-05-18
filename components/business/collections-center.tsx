@@ -10,6 +10,7 @@ import { formatCurrency } from "@/lib/utils";
 
 export function CollectionsCenter() {
   const projects = useBusinessStore((state) => state.sheets.projects.rows);
+  const theme = useBusinessStore((state) => state.theme);
 
   const pendingProjects = useMemo(() => {
     return projects
@@ -49,8 +50,16 @@ export function CollectionsCenter() {
 
   return (
     <div className="space-y-6">
-      <Card className="overflow-hidden rounded-[32px] border border-slate-200/80 bg-white/90 p-0 shadow-[0_24px_80px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-950/72">
-        <div className="border-b border-slate-200/80 bg-white/70 px-5 py-5 dark:border-white/10 dark:bg-white/[0.03]">
+      <Card
+        className={`overflow-hidden rounded-[32px] border p-0 shadow-[0_24px_80px_rgba(15,23,42,0.08)] ${
+          theme === "dark" ? "border-white/10 bg-slate-950/92" : "border-slate-200/80 bg-white/90"
+        }`}
+      >
+        <div
+          className={`border-b px-5 py-5 ${
+            theme === "dark" ? "border-white/10 bg-slate-900/88" : "border-slate-200/80 bg-white/70"
+          }`}
+        >
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-fuchsia-600 dark:text-cyan-300">Collections Center</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">Pending collections and reminder actions</h1>
           <p className="mt-2 max-w-3xl text-sm text-slate-600 dark:text-zinc-400">
@@ -59,17 +68,29 @@ export function CollectionsCenter() {
         </div>
 
         <div className="grid gap-4 p-5 md:grid-cols-3">
-          <Card className="rounded-[26px] border border-slate-200/80 bg-white/80 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+          <Card
+            className={`rounded-[26px] border p-5 ${
+              theme === "dark" ? "border-white/10 bg-slate-900/82" : "border-slate-200/80 bg-white/80"
+            }`}
+          >
             <Wallet className="h-5 w-5 text-cyan-600 dark:text-cyan-300" />
             <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-zinc-400">Total pending</p>
             <p className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">{formatCurrency(totals.pendingAmount)}</p>
           </Card>
-          <Card className="rounded-[26px] border border-slate-200/80 bg-white/80 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+          <Card
+            className={`rounded-[26px] border p-5 ${
+              theme === "dark" ? "border-white/10 bg-slate-900/82" : "border-slate-200/80 bg-white/80"
+            }`}
+          >
             <CircleDollarSign className="h-5 w-5 text-amber-600 dark:text-amber-300" />
             <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-zinc-400">Projects pending</p>
             <p className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">{totals.totalProjects}</p>
           </Card>
-          <Card className="rounded-[26px] border border-slate-200/80 bg-white/80 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+          <Card
+            className={`rounded-[26px] border p-5 ${
+              theme === "dark" ? "border-white/10 bg-slate-900/82" : "border-slate-200/80 bg-white/80"
+            }`}
+          >
             <MessageSquareText className="h-5 w-5 text-rose-600 dark:text-rose-300" />
             <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-zinc-400">Overdue after delivery</p>
             <p className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">{totals.overdueProjects}</p>
@@ -79,7 +100,12 @@ export function CollectionsCenter() {
         <div className="grid gap-4 px-5 pb-5">
           {pendingProjects.length > 0 ? (
             pendingProjects.map((project) => (
-              <div key={project.id} className="rounded-[26px] border border-slate-200 bg-slate-50/80 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+              <div
+                key={project.id}
+                className={`rounded-[26px] border p-5 ${
+                  theme === "dark" ? "border-white/10 bg-slate-950/76" : "border-slate-200 bg-slate-50/80"
+                }`}
+              >
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
                     <p className="text-lg font-semibold text-slate-950 dark:text-white">{project.projectName}</p>
@@ -91,15 +117,27 @@ export function CollectionsCenter() {
                   </div>
                 </div>
                 <div className="mt-4 grid gap-3 md:grid-cols-3">
-                  <div className="rounded-[20px] border border-slate-200 bg-white/80 px-4 py-3 text-sm dark:border-white/10 dark:bg-black/20">
+                  <div
+                    className={`rounded-[20px] border px-4 py-3 text-sm ${
+                      theme === "dark" ? "border-white/10 bg-slate-900/88" : "border-slate-200 bg-white/80"
+                    }`}
+                  >
                     <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-zinc-400">Collected</p>
                     <p className="mt-1 font-semibold text-slate-900 dark:text-white">{formatCurrency(project.amountReceived)}</p>
                   </div>
-                  <div className="rounded-[20px] border border-slate-200 bg-white/80 px-4 py-3 text-sm dark:border-white/10 dark:bg-black/20">
+                  <div
+                    className={`rounded-[20px] border px-4 py-3 text-sm ${
+                      theme === "dark" ? "border-white/10 bg-slate-900/88" : "border-slate-200 bg-white/80"
+                    }`}
+                  >
                     <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-zinc-400">Project value</p>
                     <p className="mt-1 font-semibold text-slate-900 dark:text-white">{formatCurrency(project.projectValue)}</p>
                   </div>
-                  <div className="rounded-[20px] border border-slate-200 bg-white/80 px-4 py-3 text-sm dark:border-white/10 dark:bg-black/20">
+                  <div
+                    className={`rounded-[20px] border px-4 py-3 text-sm ${
+                      theme === "dark" ? "border-white/10 bg-slate-900/88" : "border-slate-200 bg-white/80"
+                    }`}
+                  >
                     <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-zinc-400">Delivery / status</p>
                     <p className="mt-1 font-semibold text-slate-900 dark:text-white">{project.deliveryDate || "No delivery date"} / {project.paymentStatus}</p>
                   </div>
@@ -130,7 +168,13 @@ export function CollectionsCenter() {
               </div>
             ))
           ) : (
-            <div className="rounded-[26px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-10 text-center text-sm text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400">
+            <div
+              className={`rounded-[26px] border border-dashed px-5 py-10 text-center text-sm ${
+                theme === "dark"
+                  ? "border-white/10 bg-slate-950/76 text-zinc-400"
+                  : "border-slate-200 bg-slate-50/80 text-slate-500"
+              }`}
+            >
               No pending collections right now.
             </div>
           )}

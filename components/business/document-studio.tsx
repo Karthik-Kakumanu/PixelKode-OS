@@ -45,7 +45,7 @@ function TextAreaField({
   placeholder?: string;
 }) {
   return (
-    <label className="grid gap-2">
+    <label className="grid min-w-0 gap-2">
       <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-zinc-400">{label}</span>
       <textarea
         value={value}
@@ -71,7 +71,7 @@ function InputField({
   placeholder?: string;
 }) {
   return (
-    <label className="grid gap-2">
+    <label className="grid min-w-0 gap-2">
       <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-zinc-400">{label}</span>
       <Input value={value} type={type} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
     </label>
@@ -81,6 +81,7 @@ function InputField({
 export function DocumentStudio() {
   const projects = useBusinessStore((state) => state.sheets.projects.rows);
   const services = useBusinessStore((state) => state.sheets.services.rows);
+  const theme = useBusinessStore((state) => state.theme);
   const [form, setForm] = useState<DocumentFormData>(() => createDefaultDocumentForm());
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [savedPresets, setSavedPresets] = useState<SavedPreset[]>([]);
@@ -153,6 +154,7 @@ export function DocumentStudio() {
   const sections = useMemo(() => buildDocumentSections(form), [form]);
   const activeMeta = documentTypeMeta[form.documentType];
   const lineItemTotal = useMemo(() => calculateLineItemTotal(form.lineItems), [form.lineItems]);
+  const documentTitle = `${activeMeta.label.toUpperCase()}${form.projectName || form.clientBusinessName ? ` - ${form.projectName || form.clientBusinessName}` : ""}`;
 
   const updateField = <K extends keyof DocumentFormData>(key: K, value: DocumentFormData[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -293,14 +295,22 @@ export function DocumentStudio() {
 
   return (
     <div className="space-y-6">
-      <Card className="overflow-hidden border border-slate-200/80 bg-white/85 p-0 shadow-[0_24px_80px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-950/72">
-        <div className="border-b border-slate-200/80 bg-white/70 px-5 py-5 dark:border-white/10 dark:bg-white/[0.03]">
+      <Card
+        className={`overflow-hidden border p-0 shadow-[0_24px_80px_rgba(15,23,42,0.08)] ${
+          theme === "dark" ? "border-white/10 bg-slate-950/92" : "border-slate-200/80 bg-white/85"
+        }`}
+      >
+        <div
+          className={`border-b px-5 py-5 ${
+            theme === "dark" ? "border-white/10 bg-slate-900/88" : "border-slate-200/80 bg-white/70"
+          }`}
+        >
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-fuchsia-600 dark:text-cyan-300">Documents Workspace</p>
               <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">Proposal, quotation, agreement, contract, invoice, onboarding, and project brief</h1>
               <p className="mt-2 max-w-3xl text-sm text-slate-600 dark:text-zinc-400">
-                Fill the details manually, personalize it for each project, assign your own filename, and download a ready PDF.
+                Fill the details once, then generate a cleaner, more formal document with clause-based sections, process details, commercials, and signature-ready layout.
               </p>
             </div>
             <Button type="button" className="rounded-2xl" onClick={downloadPdf}>
@@ -323,9 +333,13 @@ export function DocumentStudio() {
                   }}
                   className={`rounded-[24px] border px-4 py-4 text-left transition ${
                     form.documentType === type
-                      ? "border-fuchsia-300 bg-fuchsia-50 text-slate-900 shadow-sm dark:border-cyan-400/40 dark:bg-cyan-500/10 dark:text-white"
-                      : "border-slate-200 bg-white/80 text-slate-700 hover:bg-white dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:bg-white/[0.06]"
-                  }`}
+                      ? theme === "dark"
+                        ? "border-cyan-400/40 bg-cyan-950/50 text-white shadow-sm"
+                        : "border-fuchsia-300 bg-fuchsia-50 text-slate-900 shadow-sm"
+                      : theme === "dark"
+                        ? "border-white/10 bg-slate-950/76 text-zinc-300 hover:bg-slate-900/88"
+                        : "border-slate-200 bg-white/80 text-slate-700 hover:bg-white"
+                    }`}
                 >
                   <p className="text-sm font-semibold">{documentTypeMeta[type].label}</p>
                   <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-zinc-400">{documentTypeMeta[type].description}</p>
@@ -333,7 +347,11 @@ export function DocumentStudio() {
               ))}
             </div>
 
-            <Card className="rounded-[28px] border border-slate-200/80 bg-white/80 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+            <Card
+              className={`rounded-[28px] border p-5 ${
+                theme === "dark" ? "border-white/10 bg-slate-900/84" : "border-slate-200/80 bg-white/80"
+              }`}
+            >
               <div className="mb-4 flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-fuchsia-500 dark:text-cyan-300" />
                 <p className="text-sm font-semibold text-slate-900 dark:text-white">Document Setup</p>
@@ -421,7 +439,11 @@ export function DocumentStudio() {
               </div>
             </Card>
 
-            <Card className="rounded-[28px] border border-slate-200/80 bg-white/80 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+            <Card
+              className={`rounded-[28px] border p-5 ${
+                theme === "dark" ? "border-white/10 bg-slate-900/84" : "border-slate-200/80 bg-white/80"
+              }`}
+            >
               <p className="mb-4 text-sm font-semibold text-slate-900 dark:text-white">Business and Client Contact Details</p>
               <div className="grid gap-4 md:grid-cols-2">
                 <TextAreaField label="Business address" value={form.businessAddress} onChange={(value) => updateField("businessAddress", value)} />
@@ -436,7 +458,11 @@ export function DocumentStudio() {
               </div>
             </Card>
 
-            <Card className="rounded-[28px] border border-slate-200/80 bg-white/80 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+            <Card
+              className={`rounded-[28px] border p-5 ${
+                theme === "dark" ? "border-white/10 bg-slate-900/84" : "border-slate-200/80 bg-white/80"
+              }`}
+            >
               <p className="mb-4 text-sm font-semibold text-slate-900 dark:text-white">Document Content</p>
               <div className="mb-4 flex flex-wrap gap-2">
                 <Button type="button" variant="outline" size="sm" className="rounded-2xl" onClick={() => runAiSuggestion("scope")} disabled={isAiLoading}>
@@ -469,7 +495,11 @@ export function DocumentStudio() {
               </div>
             </Card>
 
-            <Card className="rounded-[28px] border border-slate-200/80 bg-white/80 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+            <Card
+              className={`rounded-[28px] border p-5 ${
+                theme === "dark" ? "border-white/10 bg-slate-900/84" : "border-slate-200/80 bg-white/80"
+              }`}
+            >
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-slate-900 dark:text-white">Pricing Table / Invoice Line Items</p>
@@ -485,17 +515,22 @@ export function DocumentStudio() {
                   const rate = Number(item.rate || 0);
                   const total = Number.isFinite(quantity) && Number.isFinite(rate) ? quantity * rate : 0;
                   return (
-                    <div key={`line-item-${index}`} className="grid gap-3 rounded-[22px] border border-slate-200 bg-slate-50/80 p-4 dark:border-white/10 dark:bg-white/[0.03] md:grid-cols-[minmax(0,1.5fr)_120px_140px_140px_88px]">
+                    <div
+                      key={`line-item-${index}`}
+                      className={`grid gap-3 rounded-[22px] border p-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1.5fr)_120px_140px_140px_88px] ${
+                        theme === "dark" ? "border-white/10 bg-slate-950/76" : "border-slate-200 bg-slate-50/80"
+                      }`}
+                    >
                       <InputField label="Description" value={item.description} onChange={(value) => updateLineItem(index, { description: value })} placeholder="Website design" />
                       <InputField label="Qty" value={item.quantity} onChange={(value) => updateLineItem(index, { quantity: value })} placeholder="1" />
                       <InputField label="Rate" value={item.rate} onChange={(value) => updateLineItem(index, { rate: value })} placeholder="40000" />
-                      <div className="grid gap-2">
+                      <div className="grid min-w-0 gap-2">
                         <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-zinc-400">Amount</span>
                         <div className="flex h-11 items-center rounded-2xl border border-slate-200 bg-white/90 px-4 text-sm font-semibold text-slate-800 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100">
                           INR {Number.isFinite(total) ? total.toLocaleString("en-IN") : "0"}
                         </div>
                       </div>
-                      <div className="flex items-end">
+                      <div className="flex min-w-0 items-end">
                         <Button type="button" variant="outline" size="sm" className="h-11 w-full rounded-2xl" onClick={() => removeLineItem(index)}>
                           Remove
                         </Button>
@@ -515,52 +550,61 @@ export function DocumentStudio() {
           </div>
 
           <div className="space-y-5">
-            <Card className="rounded-[28px] border border-slate-200/80 bg-white/90 p-5 shadow-[0_20px_60px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-950/72">
+            <Card
+              className={`rounded-[28px] border p-5 shadow-[0_20px_60px_rgba(15,23,42,0.06)] ${
+                theme === "dark" ? "border-white/10 bg-slate-950/72" : "border-slate-200/80 bg-white/90"
+              }`}
+            >
               <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 text-fuchsia-500 dark:text-cyan-300" />
+                <FileText className="h-4 w-4 text-slate-700 dark:text-zinc-200" />
                 <p className="text-sm font-semibold text-slate-900 dark:text-white">Live Preview</p>
               </div>
               <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">{activeMeta.description}</p>
-              <div className="mt-5 overflow-hidden rounded-[28px] border border-slate-200 bg-slate-50/80 dark:border-white/10 dark:bg-white/[0.03]">
-                <div className="bg-gradient-to-r from-cyan-600 via-sky-600 to-blue-700 px-5 py-5 text-white">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-50/80">{form.businessName || "Your Business"}</p>
-                  <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-                    {activeMeta.label} - {form.projectName || form.clientBusinessName || "Untitled"}
-                  </h2>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-[18px] border border-white/15 bg-white/10 px-3 py-3">
-                      <p className="text-[10px] uppercase tracking-[0.16em] text-cyan-50/70">Client</p>
-                      <p className="mt-1 text-sm font-medium text-white">{form.clientBusinessName || form.clientName || "Not added"}</p>
-                    </div>
-                    <div className="rounded-[18px] border border-white/15 bg-white/10 px-3 py-3">
-                      <p className="text-[10px] uppercase tracking-[0.16em] text-cyan-50/70">Commercials</p>
-                      <p className="mt-1 text-sm font-medium text-white">{form.totalAmount ? `INR ${form.totalAmount}` : lineItemTotal > 0 ? `INR ${lineItemTotal.toLocaleString("en-IN")}` : "Not added"}</p>
-                    </div>
-                    <div className="rounded-[18px] border border-white/15 bg-white/10 px-3 py-3">
-                      <p className="text-[10px] uppercase tracking-[0.16em] text-cyan-50/70">Timeline</p>
-                      <p className="mt-1 text-sm font-medium text-white">{form.timeline || form.deliveryDate || "Not added"}</p>
+              <div
+                className={`mt-5 overflow-hidden rounded-[28px] border ${
+                  theme === "dark" ? "border-white/10 bg-slate-950/76" : "border-slate-200 bg-stone-100/80"
+                }`}
+              >
+                <div className={`mx-auto min-h-[980px] max-w-[760px] px-6 py-7 ${
+                  theme === "dark" ? "bg-slate-900 text-zinc-100" : "bg-white text-slate-900"
+                }`}>
+                  <div className={`border-b pb-4 ${theme === "dark" ? "border-white/10" : "border-slate-300"}`}>
+                    <p className={`text-xs font-semibold uppercase tracking-[0.22em] ${theme === "dark" ? "text-white" : "text-black"}`}>
+                      {form.businessName || "Your Business"}
+                    </p>
+                    <h2 className="mt-3 text-center text-2xl font-semibold tracking-[0.08em]">{documentTitle}</h2>
+                    <div className={`mt-4 grid gap-3 text-sm sm:grid-cols-2 ${theme === "dark" ? "text-zinc-200" : "text-slate-800"}`}>
+                      <p><span className="font-semibold">Client:</span> {form.clientBusinessName || form.clientName || "Not added"}</p>
+                      <p><span className="font-semibold">Reference:</span> {form.invoiceNumber || "Not added"}</p>
+                      <p><span className="font-semibold">Value:</span> {form.totalAmount ? `INR ${form.totalAmount}` : lineItemTotal > 0 ? `INR ${lineItemTotal.toLocaleString("en-IN")}` : "Not added"}</p>
+                      <p><span className="font-semibold">Timeline:</span> {form.timeline || form.deliveryDate || "Not added"}</p>
                     </div>
                   </div>
-                </div>
-                <div className="p-5">
-                <div className="mt-5 space-y-5">
+                  <div className="mt-6 space-y-6">
                   {sections.map((section) => (
-                    <div key={section.heading} className="rounded-[22px] border border-slate-200 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-white/[0.03]">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-fuchsia-600 dark:text-cyan-300">{section.heading}</p>
-                      <div className="mt-2 space-y-1.5">
+                    <section key={section.heading}>
+                      <p className={`border-b pb-2 text-sm font-semibold tracking-[0.08em] ${
+                        theme === "dark" ? "border-white/10 text-white" : "border-slate-300 text-black"
+                      }`}>
+                        {section.heading}
+                      </p>
+                      <div className="mt-3 space-y-2">
                         {section.lines.map((line, index) => (
-                          <p key={`${section.heading}-${index}`} className="text-sm leading-6 text-slate-700 dark:text-zinc-300">
-                            {line}
+                          <p key={`${section.heading}-${index}`} className={`text-sm leading-7 ${theme === "dark" ? "text-zinc-200" : "text-slate-800"}`}>
+                            {line.startsWith("- ") ? `- ${line.slice(2)}` : line}
                           </p>
                         ))}
                       </div>
-                    </div>
+                    </section>
                   ))}
-                </div>
-                {form.lineItems.some((item) => item.description.trim() || item.rate.trim()) ? (
-                  <div className="mt-5 rounded-[22px] border border-slate-200 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-white/[0.03]">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-fuchsia-600 dark:text-cyan-300">Pricing Table</p>
-                    <div className="mt-3 overflow-hidden rounded-[18px] border border-slate-200 dark:border-white/10">
+                  {form.lineItems.some((item) => item.description.trim() || item.rate.trim()) ? (
+                    <section>
+                      <p className={`border-b pb-2 text-sm font-semibold tracking-[0.08em] ${
+                        theme === "dark" ? "border-white/10 text-white" : "border-slate-300 text-black"
+                      }`}>
+                        Line Item Table
+                      </p>
+                      <div className="mt-3 overflow-hidden rounded-[10px] border border-slate-300 dark:border-white/10">
                       <div className="grid grid-cols-[minmax(0,1.5fr)_90px_120px_120px] bg-slate-100 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 dark:bg-white/[0.06] dark:text-zinc-300">
                         <div className="px-3 py-3">Item</div>
                         <div className="px-3 py-3">Qty</div>
@@ -588,24 +632,29 @@ export function DocumentStudio() {
                         <div />
                         <div className="px-3 py-3 font-semibold text-slate-900 dark:text-white">INR {lineItemTotal.toLocaleString("en-IN")}</div>
                       </div>
+                      </div>
+                    </section>
+                  ) : null}
+                  <div className="grid gap-8 pt-6 sm:grid-cols-2">
+                    <div>
+                      <p className={`text-sm font-semibold ${theme === "dark" ? "text-zinc-200" : "text-slate-800"}`}>Authorized Signature</p>
+                      <div className="mt-8 h-px bg-slate-400 dark:bg-white/20" />
                     </div>
-                  </div>
-                ) : null}
-                <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                  <div className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-4 dark:border-white/10 dark:bg-white/[0.03]">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-zinc-400">Authorized Signature</p>
-                    <div className="mt-6 h-px bg-slate-300 dark:bg-white/15" />
-                  </div>
-                  <div className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-4 dark:border-white/10 dark:bg-white/[0.03]">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-zinc-400">Client Acceptance</p>
-                    <div className="mt-6 h-px bg-slate-300 dark:bg-white/15" />
+                    <div>
+                      <p className={`text-sm font-semibold ${theme === "dark" ? "text-zinc-200" : "text-slate-800"}`}>Client Acceptance / Signature</p>
+                      <div className="mt-8 h-px bg-slate-400 dark:bg-white/20" />
+                    </div>
                   </div>
                 </div>
                 </div>
               </div>
             </Card>
 
-            <Card className="rounded-[28px] border border-slate-200/80 bg-white/90 p-5 dark:border-white/10 dark:bg-slate-950/72">
+            <Card
+              className={`rounded-[28px] border p-5 ${
+                theme === "dark" ? "border-white/10 bg-slate-950/72" : "border-slate-200/80 bg-white/90"
+              }`}
+            >
               <p className="text-sm font-semibold text-slate-900 dark:text-white">Recommended use</p>
               <div className="mt-3 grid gap-3">
                 {[
@@ -616,7 +665,14 @@ export function DocumentStudio() {
                   "Use Onboarding after acceptance to collect assets, access, and approvals.",
                   "Use Project Brief for the internal execution team after closing the client."
                 ].map((item) => (
-                  <div key={item} className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300">
+                  <div
+                    key={item}
+                    className={`rounded-[20px] border px-4 py-3 text-sm ${
+                      theme === "dark"
+                        ? "border-white/10 bg-slate-950/76 text-zinc-300"
+                        : "border-slate-200 bg-slate-50/80 text-slate-600"
+                    }`}
+                  >
                     {item}
                   </div>
                 ))}

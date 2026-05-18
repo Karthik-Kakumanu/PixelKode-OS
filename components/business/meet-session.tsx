@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { readMeetHistory, type MeetSessionRecord, writeMeetHistory } from "@/lib/meet-session-store";
+import { useBusinessStore } from "@/lib/store";
 
 type MeetStatus = {
   configured: boolean;
@@ -37,6 +38,7 @@ function buildWhatsAppLink(record: MeetSessionRecord) {
 }
 
 export function MeetSession() {
+  const theme = useBusinessStore((state) => state.theme);
   const searchParams = useSearchParams();
   const [status, setStatus] = useState<MeetStatus>({ configured: false, connected: false, email: null });
   const [isLoadingStatus, setIsLoadingStatus] = useState(true);
@@ -182,8 +184,16 @@ export function MeetSession() {
 
   return (
     <div className="space-y-6" suppressHydrationWarning>
-      <Card className="overflow-hidden border border-slate-200/80 bg-white/90 p-0 dark:border-white/10 dark:bg-slate-950/72">
-        <div className="border-b border-slate-200/80 bg-white/80 px-5 py-4 dark:border-white/10 dark:bg-white/[0.03]">
+      <Card
+        className={`overflow-hidden border p-0 ${
+          theme === "dark" ? "border-white/10 bg-slate-950/92" : "border-slate-200/80 bg-white/90"
+        }`}
+      >
+        <div
+          className={`border-b px-5 py-4 ${
+            theme === "dark" ? "border-white/10 bg-slate-900/88" : "border-slate-200/80 bg-white/80"
+          }`}
+        >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h1 className="premium-heading text-2xl font-semibold">Meet Session</h1>
@@ -191,7 +201,13 @@ export function MeetSession() {
                 Create instant or scheduled Google Meet sessions and keep the shareable link inside the workspace. App credentials configure the integration, and Google account authorization unlocks meeting creation.
               </p>
             </div>
-            <div className="rounded-2xl border border-slate-200/80 bg-white/80 px-3 py-2 text-sm font-medium text-slate-600 shadow-sm dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300">
+            <div
+              className={`rounded-2xl border px-3 py-2 text-sm font-medium shadow-sm ${
+                theme === "dark"
+                  ? "border-white/10 bg-slate-900/84 text-zinc-300"
+                  : "border-slate-200/80 bg-white/80 text-slate-600"
+              }`}
+            >
               {isLoadingStatus
                 ? "Checking Google status..."
                 : status.connected
@@ -208,7 +224,12 @@ export function MeetSession() {
           {success ? <p className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">{success}</p> : null}
 
           <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]" suppressHydrationWarning>
-            <div className="space-y-4 rounded-[26px] border border-slate-200/80 bg-white/90 p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.03]" suppressHydrationWarning>
+            <div
+              className={`space-y-4 rounded-[26px] border p-4 shadow-sm ${
+                theme === "dark" ? "border-white/10 bg-slate-900/84" : "border-slate-200/80 bg-white/90"
+              }`}
+              suppressHydrationWarning
+            >
               <div className="flex flex-wrap items-center gap-2" suppressHydrationWarning>
                 <Button
                   type="button"
@@ -217,8 +238,12 @@ export function MeetSession() {
                   onClick={() => setMode("instant")}
                   className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
                     mode === "instant"
-                      ? "border-slate-800 bg-slate-800 text-white dark:border-white dark:bg-white dark:text-slate-950"
-                      : "border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-200 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:bg-white/[0.08]"
+                      ? theme === "dark"
+                        ? "border-cyan-300/30 bg-white text-slate-950"
+                        : "border-slate-800 bg-slate-800 text-white"
+                      : theme === "dark"
+                        ? "border-white/10 bg-slate-950/76 text-zinc-300 hover:bg-slate-900/88"
+                        : "border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-200"
                   }`}
                 >
                   Instant Meet
@@ -230,8 +255,12 @@ export function MeetSession() {
                   onClick={() => setMode("scheduled")}
                   className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
                     mode === "scheduled"
-                      ? "border-slate-800 bg-slate-800 text-white dark:border-white dark:bg-white dark:text-slate-950"
-                      : "border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-200 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:bg-white/[0.08]"
+                      ? theme === "dark"
+                        ? "border-cyan-300/30 bg-white text-slate-950"
+                        : "border-slate-800 bg-slate-800 text-white"
+                      : theme === "dark"
+                        ? "border-white/10 bg-slate-950/76 text-zinc-300 hover:bg-slate-900/88"
+                        : "border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-200"
                   }`}
                 >
                   Scheduled Meet
@@ -276,7 +305,13 @@ export function MeetSession() {
                     />
                   </>
                 ) : (
-                  <div className="md:col-span-2 flex items-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 text-sm text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400">
+                  <div
+                    className={`md:col-span-2 flex items-center rounded-2xl border border-dashed px-4 text-sm ${
+                      theme === "dark"
+                        ? "border-white/10 bg-slate-950/72 text-zinc-400"
+                        : "border-slate-200 bg-slate-50 text-slate-500"
+                    }`}
+                  >
                     Starts immediately using your current time zone: {timezone}
                   </div>
                 )}
@@ -301,13 +336,24 @@ export function MeetSession() {
                     Add credentials in .env.local first
                   </Button>
                 )}
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300">
+                <div
+                  className={`rounded-2xl border px-4 py-3 text-sm ${
+                    theme === "dark"
+                      ? "border-white/10 bg-slate-950/76 text-zinc-300"
+                      : "border-slate-200 bg-slate-50 text-slate-600"
+                  }`}
+                >
                   Invite mail is optional. If you add it, Google Calendar sends the meeting invite there. Use `.env.local` for real credentials; `.env.example` is only a template.
                 </div>
               </div>
             </div>
 
-            <div className="rounded-[26px] border border-slate-200/80 bg-white/90 p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.03]" suppressHydrationWarning>
+            <div
+              className={`rounded-[26px] border p-4 shadow-sm ${
+                theme === "dark" ? "border-white/10 bg-slate-900/84" : "border-slate-200/80 bg-white/90"
+              }`}
+              suppressHydrationWarning
+            >
               <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white" suppressHydrationWarning>
                 <CalendarClock className="h-4 w-4 text-fuchsia-600" />
                 Latest Meet Link
@@ -315,7 +361,11 @@ export function MeetSession() {
 
               {activeRecord ? (
                 <div className="space-y-3">
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">
+                  <div
+                    className={`rounded-2xl border px-4 py-3 ${
+                      theme === "dark" ? "border-white/10 bg-slate-950/76" : "border-slate-200 bg-slate-50"
+                    }`}
+                  >
                     <p className="text-sm font-semibold text-slate-900 dark:text-white">{activeRecord.title}</p>
                     <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">{formatLocalDateTime(activeRecord.scheduledAt)}</p>
                     <p className="mt-3 break-all rounded-xl bg-white px-3 py-3 text-sm text-slate-700 shadow-sm dark:bg-zinc-900 dark:text-zinc-200">
@@ -347,14 +397,25 @@ export function MeetSession() {
                   </div>
                 </div>
               ) : (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400">
+                <div
+                  className={`rounded-2xl border border-dashed px-4 py-8 text-sm ${
+                    theme === "dark"
+                      ? "border-white/10 bg-slate-950/72 text-zinc-400"
+                      : "border-slate-200 bg-slate-50 text-slate-500"
+                  }`}
+                >
                   Your generated Meet link will appear here after creation.
                 </div>
               )}
             </div>
           </div>
 
-          <div className="rounded-[26px] border border-slate-200/80 bg-white/90 p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.03]" suppressHydrationWarning>
+          <div
+            className={`rounded-[26px] border p-4 shadow-sm ${
+              theme === "dark" ? "border-white/10 bg-slate-900/84" : "border-slate-200/80 bg-white/90"
+            }`}
+            suppressHydrationWarning
+          >
             <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white" suppressHydrationWarning>
               <Video className="h-4 w-4 text-sky-600" />
               Recent Sessions
@@ -363,7 +424,12 @@ export function MeetSession() {
             <div className="space-y-3">
               {history.length > 0 ? (
                 history.map((record) => (
-                  <div key={record.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">
+                  <div
+                    key={record.id}
+                    className={`rounded-2xl border px-4 py-3 ${
+                      theme === "dark" ? "border-white/10 bg-slate-950/76" : "border-slate-200 bg-slate-50"
+                    }`}
+                  >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-slate-900 dark:text-white">{record.title}</p>
@@ -395,7 +461,13 @@ export function MeetSession() {
                   </div>
                 ))
               ) : (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-400">
+                <div
+                  className={`rounded-2xl border border-dashed px-4 py-8 text-sm ${
+                    theme === "dark"
+                      ? "border-white/10 bg-slate-950/72 text-zinc-400"
+                      : "border-slate-200 bg-slate-50 text-slate-500"
+                  }`}
+                >
                   No meetings created yet.
                 </div>
               )}
